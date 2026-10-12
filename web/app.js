@@ -59,6 +59,7 @@ const ICON = {
   back: '<path d="M15 5l-7 7 7 7"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   paste: '<rect x="5" y="4" width="14" height="17" rx="2.5"/><path d="M9 4V3h6v1M9 10h6M9 14h6M9 18h3"/>',
+  key: '<circle cx="8" cy="15" r="4"/><path d="M10.8 12.2 20 3M17 6l3 3M14.5 8.5l2 2"/>',
   copy: '<rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
   mark: '<path d="M4 7h16v12H4z" stroke="none" fill="none"/><path d="M5 9.5 12 5l7 4.5M6 10v7M10 10v7M14 10v7M18 10v7M4 19h16"/>',
 };
@@ -343,6 +344,7 @@ function renderShell(current) {
       <div class="side-user">
         <span class="avatar">${initial(me.display_name)}</span>
         <div class="who"><b>${me.display_name}</b><span>${ROLE_TH[me.role]}</span></div>
+        <button class="icon-btn" data-passwd title="เปลี่ยนรหัสผ่าน" aria-label="เปลี่ยนรหัสผ่าน">${svg(ICON.key)}</button>
         <button class="icon-btn" data-logout title="ออกจากระบบ" aria-label="ออกจากระบบ">${svg(ICON.logout)}</button>
       </div>
     </aside>
@@ -351,6 +353,7 @@ function renderShell(current) {
       <header class="mobile-top">${BRAND}
         <div class="t">${me.display_name}<span>${ROLE_TH[me.role]}${me.line_id ? ` ${lineName(me.line_id)}` : ""}</span></div>
         ${isOwner() ? lineSelect("line-filter-m") : ""}
+        <button class="icon-btn" data-passwd aria-label="เปลี่ยนรหัสผ่าน">${svg(ICON.key)}</button>
         <button class="icon-btn" data-logout aria-label="ออกจากระบบ">${svg(ICON.logout)}</button>
       </header>
       <main id="view" class="main"></main>
@@ -363,10 +366,59 @@ function renderShell(current) {
   app.querySelectorAll("[data-logout]").forEach((b) => {
     b.onclick = async () => { await sb.auth.signOut(); state.me = null; location.hash = ""; route(); };
   });
+  app.querySelectorAll("[data-passwd]").forEach((b) => { b.onclick = () => changeOwnPasswordModal(); });
   app.querySelectorAll("#line-filter, #line-filter-m").forEach((sel) => {
     sel.onchange = () => { state.lineFilter = sel.value; storage("lineFilter", sel.value); route(); };
   });
   if (rank() >= 2) refreshQueueCount();
+}
+
+// เปลี่ยนรหัสผ่านของตัวเอง (ทุกบทบาท) ต้องยืนยันรหัสผ่านเดิมก่อน
+function changeOwnPasswordModal() {
+  openModal({
+    title: "เปลี่ยนรหัสผ่านของฉัน",
+    body: html`<div id="msg"></div>
+      <div class="field"><label for="pw-cur">รหัสผ่านปัจจุบัน</label>
+        <input id="pw-cur" type="password" name="current" autocomplete="current-password" required></div>
+      <div class="field"><label for="pw-new">รหัสผ่านใหม่</label>
+        <input id="pw-new" type="password" name="next" autocomplete="new-password" required>
+        <span class="hint">อย่างน้อย 8 ตัวอักษร</span></div>
+      <div class="field"><label for="pw-again">ยืนยันรหัสผ่านใหม่</label>
+        <input id="pw-again" type="password" name="again" autocomplete="new-password" required></div>
+      <label class="check-line show-pw"><input type="checkbox" name="show"><span>แสดงรหัสผ่านที่พิมพ์</span></label>`,
+    foot: html`<button type="button" class="btn btn-quiet" data-close>ยกเลิก</button>
+      <button type="submit" class="btn btn-primary">เปลี่ยนรหัสผ่าน</button>`,
+    onMount: (form, close) => {
+      const msg = form.querySelector("#msg");
+      form.show.onchange = () => {
+        for (const n of ["current", "next", "again"]) form[n].type = form.show.checked ? "text" : "password";
+      };
+      form.onsubmit = (e) => {
+        e.preventDefault();
+        const cur = form.current.value, next = form.next.value, again = form.again.value;
+        if (!cur) return (msg.innerHTML = alertBox("danger", "กรอกรหัสผ่านปัจจุบัน"));
+        if (next.length < 8) return (msg.innerHTML = alertBox("danger", "รหัสผ่านใหม่ต้องยาวอย่างน้อย 8 ตัวอักษร"));
+        if (next !== again) return (msg.innerHTML = alertBox("danger", "รหัสผ่านใหม่ทั้งสองช่องไม่ตรงกัน"));
+        if (next === cur) return (msg.innerHTML = alertBox("danger", "รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสผ่านเดิม"));
+        busy(form.querySelector("[type=submit]"), async () => {
+          // ยืนยันว่าเป็นเจ้าของบัญชีจริง ด้วยการเข้าสู่ระบบด้วยรหัสผ่านเดิม
+          const { error: authErr } = await sb.auth.signInWithPassword({
+            email: `${state.me.username}@${EMAIL_DOMAIN}`, password: cur,
+          });
+          if (authErr) { msg.innerHTML = alertBox("danger", "รหัสผ่านปัจจุบันไม่ถูกต้อง"); return; }
+          const { error } = await sb.auth.updateUser({ password: next });
+          if (error) {
+            const m = /different from the old|same/i.test(error.message) ? "รหัสผ่านใหม่ต้องไม่ซ้ำกับรหัสผ่านเดิม"
+              : /weak|least/i.test(error.message) ? "รหัสผ่านใหม่ง่ายเกินไป ลองใช้ตัวอักษรผสมตัวเลข" : error.message;
+            msg.innerHTML = alertBox("danger", m);
+            return;
+          }
+          close();
+          toast("เปลี่ยนรหัสผ่านแล้ว ใช้รหัสใหม่ในการเข้าสู่ระบบครั้งถัดไป");
+        });
+      };
+    },
+  });
 }
 
 async function refreshQueueCount() {
