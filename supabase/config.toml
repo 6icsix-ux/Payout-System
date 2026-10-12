@@ -1,0 +1,4 @@
+# ตั้งค่า Supabase สำหรับการ deploy ผ่าน CLI หรือ GitHub
+# manage-user ตรวจการล็อกอินเองในโค้ด จึงต้องปิด Verify JWT
+[functions.manage-user]
+verify_jwt = false
