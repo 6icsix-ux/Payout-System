@@ -166,17 +166,19 @@ export function parsePayoutLine(raw) {
   if (!line) return null;
 
   let namePart, amtPart;
-  const plusAt = line.indexOf("(+)");
-  if (plusAt >= 0) {
-    namePart = line.slice(0, plusAt);
-    amtPart = line.slice(plusAt + 3);
+  const plus = line.match(/[(（]\s*\+\s*[)）]/); // (+) หรือ ( + )
+  if (plus) {
+    namePart = line.slice(0, plus.index);
+    amtPart = line.slice(plus.index + plus[0].length);
   } else {
     // ไม่มี (+): ตัวเลขชุดท้ายบรรทัดคือยอด
-    const m = line.match(/^(.*?)[\s:]+([\d,.\s+\-*=]+)$/);
+    const m = line.replace(/\s*(บาท|บ\.|฿|thb)\s*$/i, "").match(/^(.*?)[\s:：]+([\d,.\s+\-*=]+)$/i);
     if (!m) { out.name = line.replace(/^[@＠]+/, "").trim(); out.notes.push("ไม่พบยอดเงิน"); return out; }
     namePart = m[1]; amtPart = m[2];
   }
-  out.name = namePart.replace(/^[\s@＠]+/, "").trim();
+  out.name = namePart.replace(/^[\s@＠]+/, "").replace(/[\s:：+]+$/, "").trim();
+  // ตัดสิ่งที่อยู่หน้าตัวเลขแรก (++ + : =) และหน่วยเงินท้ายบรรทัด
+  amtPart = amtPart.replace(/(บาท|บ\.|฿|thb)/gi, " ").replace(/^[^\d]+/, "");
 
   const eq = amtPart.lastIndexOf("=");
   if (eq >= 0) {
