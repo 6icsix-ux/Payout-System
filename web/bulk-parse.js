@@ -133,3 +133,69 @@ export function parseBlock(lines) {
 export function parseBulk(text) {
   return splitBlocks(text).map(parseBlock).filter((r) => r.line_name || r.account_number);
 }
+
+// =====================================================================
+// แจ้งโอนหลายราย เช่น
+//   ($):@แสงดาว🤩 (+) 190
+//   ($):@สมพิศ (+) 475+475-320 = *630*
+//   ($): Rungrote929292 (+)  950+2850 = *3,800*
+// ชื่อไลน์อยู่ก่อน (+) ยอดเงินอยู่หลัง (+) หรือหลัง = ถ้ามี
+// =====================================================================
+
+// คีย์สำหรับเทียบชื่อ: ตัดอีโมจิ ช่องว่าง เครื่องหมาย เหลือแค่ตัวอักษรและตัวเลข
+export function nameKey(name) {
+  return String(name || "").normalize("NFKC").toLowerCase()
+    .replace(/[︎️​-‍]/g, "")
+    .replace(/[^\p{L}\p{M}\p{N}]/gu, "");
+}
+
+// รวมยอดแบบ 475+475-320 (รับแค่ตัวเลข + - .)
+function sumExpr(expr) {
+  const clean = expr.replace(/[\s*,]/g, "");
+  if (!clean || !/^[+-]?\d+(\.\d+)?([+-]\d+(\.\d+)?)*$/.test(clean)) return null;
+  return (clean.match(/[+-]?\d+(\.\d+)?/g) || []).reduce((s, n) => s + Number(n), 0);
+}
+const toNumber = (s) => {
+  const n = Number(String(s).replace(/[\s*,]/g, ""));
+  return Number.isFinite(n) ? n : null;
+};
+
+export function parsePayoutLine(raw) {
+  const out = { raw, name: "", amount: null, notes: [] };
+  let line = raw.replace(/^\s*\(\s*\$\s*\)\s*[:：]?\s*/, "").trim(); // ตัด ($):
+  if (!line) return null;
+
+  let namePart, amtPart;
+  const plusAt = line.indexOf("(+)");
+  if (plusAt >= 0) {
+    namePart = line.slice(0, plusAt);
+    amtPart = line.slice(plusAt + 3);
+  } else {
+    // ไม่มี (+): ตัวเลขชุดท้ายบรรทัดคือยอด
+    const m = line.match(/^(.*?)[\s:]+([\d,.\s+\-*=]+)$/);
+    if (!m) { out.name = line.replace(/^[@＠]+/, "").trim(); out.notes.push("ไม่พบยอดเงิน"); return out; }
+    namePart = m[1]; amtPart = m[2];
+  }
+  out.name = namePart.replace(/^[\s@＠]+/, "").trim();
+
+  const eq = amtPart.lastIndexOf("=");
+  if (eq >= 0) {
+    const stated = toNumber(amtPart.slice(eq + 1));
+    const calc = sumExpr(amtPart.slice(0, eq));
+    out.amount = stated ?? calc;
+    if (stated != null && calc != null && Math.abs(stated - calc) > 0.001) {
+      out.notes.push(`ยอดที่เขียนไว้ ${stated} ไม่ตรงกับที่คำนวณได้ ${calc}`);
+    }
+  } else {
+    out.amount = sumExpr(amtPart);
+  }
+  if (out.amount == null || !(out.amount > 0)) { out.amount = null; out.notes.push("อ่านยอดเงินไม่ได้"); }
+  else out.amount = Math.round(out.amount * 100) / 100;
+  return out;
+}
+
+export function parseBulkPayout(text) {
+  return String(text || "").replace(/\r/g, "").split("\n")
+    .map((l) => l.trim()).filter(Boolean)
+    .map(parsePayoutLine).filter((r) => r && (r.name || r.amount));
+}

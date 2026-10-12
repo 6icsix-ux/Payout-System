@@ -351,6 +351,12 @@ tr.off td { color: var(--ink-3); }
 .bulk-raw { margin-bottom: 8px; font-size: 13px; color: var(--ink-3); }
 .bulk-raw summary { cursor: pointer; }
 .bulk-raw pre { white-space: pre-wrap; font-family: var(--ui); background: var(--sunk); border-radius: 8px; padding: 8px 10px; margin: 6px 0 0; color: var(--ink-2); }
+.bulk-src { font-size: 13px; color: var(--ink-3); background: var(--sunk); border-radius: 8px; padding: 4px 10px; margin-bottom: 10px; overflow-wrap: anywhere; }
+.bp-fields { grid-template-columns: 1.2fr 1.6fr .8fr; }
+.bulk-notes div + div { margin-top: 2px; }
+.not-sent .not-sent-head { display: flex; align-items: center; gap: 10px; justify-content: space-between; flex-wrap: wrap; margin-bottom: 6px; }
+.not-sent .bulk-result { color: #7d1e27; }
+.not-sent .why { font-size: 12.5px; background: rgba(255,255,255,.6); border-radius: 6px; padding: 0 6px; margin-left: 4px; }
 .bulk-result { margin: 0; padding-left: 20px; font-size: 14px; line-height: 1.8; }
 
 @keyframes fade { from { opacity: 0; } }
