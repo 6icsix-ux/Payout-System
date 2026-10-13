@@ -19,7 +19,7 @@ export const STATUS_TH = {
 export const PCOLS =
   "id,line_id,customer_id,bank_account_id,account_name,account_number,bank_code,customer_line_name," +
   "amount,note,status,version,return_reason,created_by,created_at,transferred_by,transferred_at," +
-  "confirmed_at,returned_at,returned_by," +
+  "confirmed_at,returned_at,returned_by,batch_id," +
   "creator:profiles!payout_requests_created_by_fkey(display_name)," +
   "transferrer:profiles!payout_requests_transferred_by_fkey(display_name)";
 

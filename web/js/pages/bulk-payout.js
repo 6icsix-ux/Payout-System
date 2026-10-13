@@ -8,9 +8,10 @@ import { parseRoute } from "../core/router.js";
 import { state } from "../core/state.js";
 import { alertBox, busy, lineOptions, openModal, stamp } from "../core/ui.js";
 import { viewMy } from "./my.js";
+import { MAX_ATTACH, localPicker, uid, uploadImages } from "../core/images.js";
 
 // แจ้งโอนหลายราย: วางข้อความ ($):@ชื่อไลน์ (+) ยอด แล้วจับคู่กับลูกค้าในสาย
-export function bulkPayoutModal(prefillText = "", prefillLine = "") {
+export function bulkPayoutModal(prefillText = "", prefillLine = "", files = []) {
   const pickLine = isOwner();
   openModal({
     title: "แจ้งโอนหลายราย",
@@ -20,11 +21,17 @@ export function bulkPayoutModal(prefillText = "", prefillLine = "") {
         <select id="bp-line" name="line_id"><option value="">เลือกสาย</option>${lineOptions(prefillLine || state.lineFilter)}</select></div>` : ""}
       <div class="field"><label for="bp-text">วางรายการโอน</label>
         <textarea id="bp-text" name="text" rows="12" class="bulk-text" placeholder="($):@ชื่อไลน์ (+) 190&#10;($):@ชื่อไลน์ (+) 475+475-320 = *630*"></textarea>
-        <span class="hint">บรรทัดละ 1 รายการ ชื่อไลน์อยู่ก่อน (+) ยอดเงินอยู่หลัง (+) หรือหลัง = ถ้ามี</span></div>`,
+        <span class="hint">บรรทัดละ 1 รายการ ชื่อไลน์อยู่ก่อน (+) ยอดเงินอยู่หลัง (+) หรือหลัง = ถ้ามี</span></div>
+      <div class="field"><span class="label">แนบรูป <span class="opt">(ไม่บังคับ แอดมินจะเห็นรูปเหนือรายการชุดนี้)</span></span>
+        <div class="img-upload"><label class="btn">${svg(ICON.camera, 18)}เลือกรูป
+          <input type="file" accept="image/*" multiple hidden data-picker-input></label>
+          <span class="hint img-hint">ไม่เกิน ${MAX_ATTACH} รูป หรือกด Ctrl+V วางรูปที่คัดลอกไว้</span></div>
+        <div data-picker></div></div>`,
     foot: html`<button type="button" class="btn btn-quiet" data-close>ยกเลิก</button>
       <button type="submit" class="btn btn-primary">จับคู่ลูกค้า</button>`,
     onMount: (form) => {
       form.text.value = prefillText;
+      localPicker(form, files);
       const msg = form.querySelector("#msg");
       form.onsubmit = (e) => {
         e.preventDefault();
@@ -40,7 +47,7 @@ export function bulkPayoutModal(prefillText = "", prefillLine = "") {
             sb.from("payout_requests").select("customer_id,amount").eq("line_id", lineId).eq("status", "pending").limit(10000),
           ]);
           if (cRes.error || pRes.error) { msg.innerHTML = alertBox("danger", "โหลดข้อมูลลูกค้าไม่สำเร็จ ลองอีกครั้ง"); return; }
-          bulkPayoutReview(lineId, rows, cRes.data, pRes.data, text);
+          bulkPayoutReview(lineId, rows, cRes.data, pRes.data, text, files);
         });
       };
     },
@@ -58,7 +65,7 @@ export function notSentBox(list, title) {
   </div>`;
 }
 
-export function bulkPayoutReview(lineId, rows, customers, pending, sourceText) {
+export function bulkPayoutReview(lineId, rows, customers, pending, sourceText, files = []) {
   // บัญชีล่าสุดของลูกค้าเป็นค่าเริ่มต้น (ลูกค้าที่เปลี่ยนบัญชี จะใช้บัญชีใหม่)
   for (const c of customers) c.bank_accounts.sort((a, b) => b.created_at.localeCompare(a.created_at));
   const byId = new Map(customers.map((c) => [c.id, c]));
@@ -139,6 +146,9 @@ export function bulkPayoutReview(lineId, rows, customers, pending, sourceText) {
     body: html`<div id="msg"></div>
       ${isOwner() ? html`<div class="bulk-line">ส่งในสาย <b>${lineName(lineId)}</b></div>` : ""}
       <div class="bulk-summary" id="bp-sum"></div>
+      ${files.length ? html`<div class="bp-attached"><span class="label">แนบรูป ${files.length} รูป ส่งไปพร้อมรายการชุดนี้</span>
+        <div class="img-grid img-grid-sm">${files.map((f) => html`<figure class="img-tile"><div class="img-thumb">
+          <img src="${URL.createObjectURL(f)}" alt="รูปที่แนบ"></div></figure>`)}</div></div>` : ""}
       <div id="bp-skip"></div>
       <div class="bulk-list">${items.map(card)}</div>`,
     foot: html`<button type="button" class="btn btn-quiet" data-act="back">แก้ข้อความ</button>
@@ -192,7 +202,7 @@ export function bulkPayoutReview(lineId, rows, customers, pending, sourceText) {
       form.addEventListener("click", (e) => {
         const rm = e.target.closest("[data-remove]");
         if (rm) { const it = items[Number(rm.closest(".bulk-item").dataset.i)]; it.removed = !it.removed; refresh(); }
-        if (e.target.closest("[data-act=back]")) { close(); bulkPayoutModal(sourceText, lineId); }
+        if (e.target.closest("[data-act=back]")) { close(); bulkPayoutModal(sourceText, lineId, files); }
       });
       refresh();
       form.onsubmit = (e) => {
@@ -200,22 +210,34 @@ export function bulkPayoutReview(lineId, rows, customers, pending, sourceText) {
         refresh();
         if (save.disabled) return;
         busy(save, async () => {
-          const done = { sent: 0, total: 0, failed: [] };
-          for (const it of items.filter((x) => !x.removed && x.kind === "ready")) {
+          const done = { sent: 0, total: 0, failed: [], images: 0, imageFailed: [] };
+          // ส่งรูปก่อน แอดมินจะเห็นรูปพร้อมรายการทันที
+          const batchId = uid().replace(/^(.{8})(.{4})(.{4})(.{4})(.{12})$/, "$1-$2-$3-$4-$5");
+          if (files.length) {
+            const up = await uploadImages(lineId, files, (n, all) => { save.textContent = `กำลังส่งรูป ${n}/${all}`; }, batchId);
+            done.images = up.ok; done.imageFailed = up.failed;
+          }
+          const ready = items.filter((x) => !x.removed && x.kind === "ready");
+          let n = 0;
+          for (const it of ready) {
+            save.textContent = `กำลังส่งรายการ ${++n}/${ready.length}`;
             const amount = Math.round(Number(it.amount) * 100) / 100;
-            const { error } = await sb.rpc("create_payout", { p_bank_account_id: it.bank_account_id, p_amount: amount, p_note: null });
+            const { error } = await sb.rpc("create_payout", { p_bank_account_id: it.bank_account_id, p_amount: amount, p_note: null, p_batch_id: batchId });
             if (error) done.failed.push({ name: byId.get(it.customer_id)?.line_name || it.name, msg: errMsg(error) });
             else { done.sent++; done.total += amount; }
           }
           close();
           const notSent = items.filter((x) => !x.removed && x.kind === "skip");
           openModal({
-            title: done.failed.length || notSent.length ? "ส่งแล้วบางส่วน" : "ส่งให้แอดมินแล้ว",
+            title: done.failed.length || notSent.length || done.imageFailed.length ? "ส่งแล้วบางส่วน" : "ส่งให้แอดมินแล้ว",
             body: html`<div class="bulk-summary">
                 <span class="chip chip-new">ส่งแล้ว ${done.sent} รายการ</span>
                 <span class="chip chip-add">รวม ${money(done.total)} บาท</span>
                 ${notSent.length ? html`<span class="chip chip-fix">ยังไม่ส่ง ${notSent.length}</span>` : ""}
+                ${done.images ? html`<span class="chip chip-add">แนบรูป ${done.images} รูป</span>` : ""}
                 ${done.failed.length ? html`<span class="chip chip-fix">ไม่สำเร็จ ${done.failed.length}</span>` : ""}</div>
+              ${done.imageFailed.length ? html`<div class="alert alert-warn"><b>ส่งรูปไม่สำเร็จ ${done.imageFailed.length} รูป</b> รายการส่งไปแล้ว แต่แอดมินจะไม่เห็นรูปเหล่านี้
+                <ul class="bulk-result">${done.imageFailed.map((x) => html`<li>${x}</li>`)}</ul></div>` : ""}
               ${notSent.length ? notSentBox(notSent, "ยังไม่ได้ดำเนินการส่ง เพิ่มลูกค้าหรือบัญชีก่อน แล้ววางรายการเหล่านี้ส่งใหม่") : ""}
               ${done.failed.length ? html`<div class="alert alert-danger"><b>ส่งไม่สำเร็จ</b>
                 <ul class="bulk-result">${done.failed.map((x) => html`<li><b>${x.name}</b> ${x.msg}</li>`)}</ul></div>` : ""}`,

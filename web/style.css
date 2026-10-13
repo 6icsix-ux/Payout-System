@@ -284,6 +284,19 @@ a.entry:hover { background: #fafbfe; }
   border: 0; background: rgba(14,22,40,.72); color: #fff; font-size: 18px; line-height: 1; cursor: pointer;
 }
 .img-del:hover { background: var(--red); }
+.img-grid-sm { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; margin-top: 10px; }
+.bp-attached { margin-bottom: 14px; }
+.bp-attached .label { font-size: 13.5px; font-weight: 600; color: var(--ink-2); }
+.batch {
+  border: 1.5px solid #c9d3f5; background: #f7f9ff; border-radius: var(--r-lg);
+  padding: 14px 16px 16px; margin-bottom: 14px;
+}
+.batch-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; font-size: 14px; color: var(--ink-2); margin-bottom: 12px; }
+.batch-head b { color: var(--ink); }
+.batch .img-grid { grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); margin-bottom: 14px; }
+.batch .img-tile figcaption { display: none; }
+.batch-ledger { box-shadow: none; }
+.ledger + .batch, .batch + .ledger { margin-top: 14px; }
 .img-empty { color: var(--ink-3); font-size: 14px; padding: 18px; text-align: center; border: 1.5px dashed var(--rule-2); border-radius: 12px; }
 .img-view { background: var(--sunk); border-radius: 12px; overflow: hidden; text-align: center; }
 .img-view img { max-width: 100%; max-height: 72vh; display: block; margin: 0 auto; }
@@ -515,6 +528,8 @@ tr.off td { color: var(--ink-3); }
   .img-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
   .img-hint { display: none; }
   .img-upload .btn { flex: 1; }
+  .batch { padding: 12px 10px; }
+  .batch .img-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 
   /* ฟอร์มและปุ่มขนาดนิ้ว (16px กัน iPhone ซูมตอนแตะช่องกรอก) */
   input[type=text], input[type=password], input[type=number], input[type=date], input[type=search], select, textarea { font-size: 16px; min-height: 46px; }

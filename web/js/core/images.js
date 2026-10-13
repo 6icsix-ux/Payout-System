@@ -2,8 +2,6 @@
 import { sb } from "./config.js";
 import { clock, errMsg, isOwner, lineName, ownerLine, rank, todayBkk } from "./format.js";
 import { html } from "./html.js";
-import { ICON, svg } from "./icons.js";
-import { state } from "./state.js";
 import { confirmBox, openModal, toast } from "./ui.js";
 
 export const BUCKET = "queue-images";
@@ -26,16 +24,17 @@ async function signedUrls(paths) {
   return Object.fromEntries(paths.map((p) => [p, urlCache.get(p)?.url || ""]));
 }
 
-// รูปของวันนี้ (เวลาไทย) ใหม่สุดก่อน
-export async function loadTodayImages({ mine = false } = {}) {
-  let q = sb.from("queue_images").select(COLS).gte("created_at", `${todayBkk()}T00:00:00+07:00`)
-    .order("created_at", { ascending: false }).limit(200);
-  if (mine) q = q.eq("created_by", state.me.id);
-  else if (ownerLine()) q = q.eq("line_id", ownerLine());
-  const { data, error } = await q;
-  if (error) return { images: [], error };
+// รูปของชุดรายการโอน คืนค่าเป็น { batchId: [รูป...] } (เก่าก่อน ตามลำดับที่แนบ)
+export async function loadBatchImages(batchIds) {
+  const ids = [...new Set(batchIds.filter(Boolean))];
+  if (!ids.length) return { byBatch: {}, error: null };
+  const { data, error } = await sb.from("queue_images").select(COLS).in("batch_id", ids)
+    .order("created_at").limit(500);
+  if (error) return { byBatch: {}, error };
   const urls = await signedUrls(data.map((r) => r.path));
-  return { images: data.map((r) => ({ ...r, url: urls[r.path] })), error: null };
+  const byBatch = {};
+  for (const r of data) (byBatch[r.batch_id] ||= []).push({ ...r, url: urls[r.path] });
+  return { byBatch, error: null };
 }
 
 // ย่อรูปให้ด้านยาวไม่เกิน 1600px แล้วแปลงเป็น JPEG (ประหยัดพื้นที่และโหลดเร็ว)
@@ -58,21 +57,21 @@ async function shrink(file) {
 }
 
 // ชื่อไฟล์สุ่ม (ใช้ได้ทั้ง https และ http)
-const uid = () => crypto.randomUUID?.() ||
+export const uid = () => crypto.randomUUID?.() ||
   Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
 
 // อัปโหลดหลายรูป คืนจำนวนที่สำเร็จ และรายการที่ไม่สำเร็จ
-export async function uploadImages(lineId, files, onProgress = () => {}) {
+export async function uploadImages(lineId, files, onProgress = () => {}, batchId = null) {
   const done = { ok: 0, failed: [] };
   let i = 0;
   for (const file of files) {
     onProgress(++i, files.length);
     try {
       const blob = await shrink(file);
-      const path = `${lineId}/${todayBkk()}-${uid()}.jpg`;
+      const path = `${lineId}/${batchId || todayBkk()}/${uid()}.jpg`;
       const up = await sb.storage.from(BUCKET).upload(path, blob, { contentType: "image/jpeg", upsert: false });
       if (up.error) throw up.error;
-      const { error } = await sb.from("queue_images").insert({ line_id: lineId, path });
+      const { error } = await sb.from("queue_images").insert({ line_id: lineId, path, batch_id: batchId });
       if (error) { await sb.storage.from(BUCKET).remove([path]); throw error; }
       done.ok++;
     } catch (e) {
@@ -132,50 +131,37 @@ export function askDelete(img, afterDelete) {
   }, true);
 }
 
-// ช่องอัปโหลด: ปุ่มเลือกรูป (หลายรูป) + วางรูปจากคลิปบอร์ด (Ctrl+V)
-export function uploaderBox() {
-  const pickLine = isOwner();
-  return html`<div class="img-upload">
-    ${pickLine ? html`<select id="img-line" aria-label="สายที่จะส่งรูป"><option value="">เลือกสาย</option>${state.lines.map((l) =>
-      html`<option value="${l.id}" ${l.id === state.lineFilter ? "selected" : ""}>${l.name}</option>`)}</select>` : ""}
-    <label class="btn btn-primary img-add">${svg(ICON.camera, 18)}<span class="lbl">เพิ่มรูป</span>
-      <input type="file" id="img-file" accept="image/*" multiple hidden></label>
-    <span class="hint img-hint">เลือกได้หลายรูป หรือกด Ctrl+V วางรูปที่คัดลอกไว้</span>
-  </div>`;
-}
-
-// ผูกการทำงานของช่องอัปโหลด คืนฟังก์ชันสำหรับเลิกฟังการวางรูป (เรียกตอนออกจากหน้า)
-export function bindUploader(root, onDone) {
-  const input = root.querySelector("#img-file");
-  if (!input) return () => {};
-  const lineOf = () => isOwner() ? root.querySelector("#img-line")?.value : state.me.line_id;
-  let working = false;
-  const send = async (files) => {
-    files = files.filter((f) => /^image\//.test(f.type));
-    if (!files.length || working) return;
-    const lineId = lineOf();
-    if (!lineId) { toast("เลือกสายก่อนเพิ่มรูป", true); return; }
-    working = true;
-    const label = input.closest("label");
-    label.classList.add("is-busy");
-    const lbl = label.querySelector(".lbl");
-    const done = await uploadImages(lineId, files, (n, all) => { lbl.textContent = `กำลังส่ง ${n}/${all}`; });
-    lbl.textContent = "เพิ่มรูป";
-    label.classList.remove("is-busy");
-    working = false;
-    input.value = "";
-    if (done.ok) toast(`ส่งรูปแล้ว ${done.ok} รูป`);
-    if (done.failed.length) toast(`ส่งไม่สำเร็จ ${done.failed.length} รูป: ${done.failed[0]}`, true);
-    onDone?.();
+// เลือกรูปในเครื่องก่อนส่ง (ยังไม่อัปโหลด): ปุ่มเลือก + วางรูป (Ctrl+V) + ลบรูปที่เลือก
+export const MAX_ATTACH = 10;
+export function localPicker(root, files, onChange = () => {}) {
+  const box = root.querySelector("[data-picker]");
+  const input = root.querySelector("[data-picker-input]");
+  const draw = () => {
+    box.querySelectorAll("img").forEach((im) => URL.revokeObjectURL(im.src));
+    box.innerHTML = files.length ? html`<div class="img-grid img-grid-sm">${files.map((f, i) => html`
+      <figure class="img-tile"><div class="img-thumb"><img src="${URL.createObjectURL(f)}" alt="รูปที่แนบ"></div>
+        <button type="button" class="img-del" data-unpick="${i}" aria-label="เอารูปนี้ออก">×</button></figure>`)}</div>`.s : "";
+    onChange(files);
   };
-  input.onchange = () => send([...input.files]);
-  const onPaste = (e) => {
-    if (document.getElementById("modal-root")?.children.length) return; // กำลังเปิดหน้าต่างอื่นอยู่
-    const files = [...(e.clipboardData?.files || [])];
-    if (files.some((f) => /^image\//.test(f.type))) { e.preventDefault(); send(files); }
+  const add = (list) => {
+    const imgs = [...list].filter((f) => /^image\//.test(f.type));
+    if (!imgs.length) return;
+    const room = MAX_ATTACH - files.length;
+    if (room <= 0) { toast(`แนบได้ไม่เกิน ${MAX_ATTACH} รูปต่อชุด`, true); return; }
+    files.push(...imgs.slice(0, room));
+    if (imgs.length > room) toast(`แนบได้ไม่เกิน ${MAX_ATTACH} รูปต่อชุด`, true);
+    draw();
   };
-  window.addEventListener("paste", onPaste);
-  return () => window.removeEventListener("paste", onPaste);
+  input.onchange = () => { add(input.files); input.value = ""; };
+  box.onclick = (e) => {
+    const b = e.target.closest("[data-unpick]");
+    if (b) { files.splice(Number(b.dataset.unpick), 1); draw(); }
+  };
+  root.addEventListener("paste", (e) => {
+    const list = [...(e.clipboardData?.files || [])];
+    if (list.some((f) => /^image\//.test(f.type))) { e.preventDefault(); add(list); }
+  });
+  draw();
 }
 
 // จัดการคลิกในแกลเลอรี
