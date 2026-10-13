@@ -8,7 +8,7 @@ export const BUCKET = "queue-images";
 const MAX_SIDE = 1600;        // ด้านยาวสุดหลังย่อ (px)
 const QUALITY = 0.82;         // คุณภาพ JPEG
 const MAX_INPUT = 20 * 1024 * 1024;
-const COLS = "id,line_id,path,created_at,created_by,uploader:profiles!queue_images_created_by_fkey(display_name)";
+const COLS = "id,line_id,batch_id,path,created_at,created_by,uploader:profiles!queue_images_created_by_fkey(display_name)";
 
 const canDelete = () => rank() >= 2; // แอดมินขึ้นไป
 
