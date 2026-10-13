@@ -36,7 +36,7 @@ export async function viewCustomers(v, _id, alive) {
   <div class="pager" id="pager" hidden>
     <label class="pager-size">แสดง
       <select id="page-size" aria-label="จำนวนต่อหน้า">${PAGE_SIZES.map((n) => html`<option value="${n}">${n}</option>`)}</select>
-      รายการ</label>
+      <span class="unit">รายการ</span></label>
     <span class="pager-info" id="pager-info"></span>
     <div class="pager-nav">
       <button type="button" class="btn btn-sm" data-page="prev" aria-label="หน้าก่อน">${svg(ICON.back, 16)}</button>

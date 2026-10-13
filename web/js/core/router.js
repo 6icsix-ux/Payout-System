@@ -31,8 +31,25 @@ export function parseRoute() {
   return { name: name || "customers", id };
 }
 
+// ไฮไลต์เมนูของหน้าปัจจุบัน (ไม่ต้องสร้างเมนูใหม่)
+function markActive(current) {
+  document.querySelectorAll(".side-nav a, .tabbar a").forEach((a) => {
+    const k = a.getAttribute("href").replace("#/", "");
+    a.classList.toggle("active", current === k || (k === "customers" && current === "c"));
+  });
+}
+
 export function renderShell(current) {
   const me = state.me;
+  // สร้างโครงหน้า (เมนู แถบบน) ครั้งเดียวต่อผู้ใช้ เปลี่ยนหน้าแล้วไม่ต้องสร้างใหม่ = ไม่กระพริบ
+  const key = `${me.id}:${me.role}:${state.lines.map((l) => l.id + l.name).join(",")}`;
+  if (state.shellKey === key && document.getElementById("view")) {
+    markActive(current);
+    app.querySelectorAll("#line-filter, #line-filter-m").forEach((sel) => { sel.value = state.lineFilter; });
+    if (rank() >= 2) refreshQueueCount();
+    return false;
+  }
+  state.shellKey = key;
   const items = NAV.filter(([, , r]) => rank() >= r);
   const isActive = (k) => current === k || (k === "customers" && current === "c");
   const lineSelect = (id) => html`<select id="${id}" aria-label="เลือกสาย">
@@ -71,13 +88,14 @@ export function renderShell(current) {
       k === "queue" ? raw('<span class="count" data-queue-count hidden></span>') : ""}</a>`)}</nav>`.s;
 
   app.querySelectorAll("[data-logout]").forEach((b) => {
-    b.onclick = async () => { await sb.auth.signOut(); state.me = null; location.hash = ""; route(); };
+    b.onclick = async () => { await sb.auth.signOut(); state.me = null; state.shellKey = null; location.hash = ""; route(); };
   });
   app.querySelectorAll("[data-passwd]").forEach((b) => { b.onclick = () => changeOwnPasswordModal(); });
   app.querySelectorAll("#line-filter, #line-filter-m").forEach((sel) => {
     sel.onchange = () => { state.lineFilter = sel.value; storage("lineFilter", sel.value); route(); };
   });
   if (rank() >= 2) refreshQueueCount();
+  return true;
 }
 
 export async function refreshQueueCount() {
@@ -103,13 +121,22 @@ export function route() {
       <p>ใส่ SUPABASE_URL และ SUPABASE_ANON_KEY ในไฟล์ config.js แล้วโหลดหน้านี้ใหม่</p></div></div>`.s;
     return;
   }
-  if (!state.me) return viewLogin();
+  if (!state.me) { state.shellKey = null; return viewLogin(); }
   const r = parseRoute();
   let entry = VIEWS[r.name];
   if (!entry || rank() < entry[0]) { r.name = "customers"; entry = VIEWS.customers; }
-  renderShell(r.name);
+  const fresh = renderShell(r.name);
   const view = document.getElementById("view");
   const id = ++state.renderId;
-  window.scrollTo(0, 0);
-  entry[1](view, r.id, () => id === state.renderId).catch((e) => showError(view, e));
+  // เปลี่ยนไปหน้าอื่นจริงถึงเลื่อนขึ้นบนสุด (กดแท็บ/รีเฟรชหน้าเดิม คงตำแหน่งเดิม)
+  const where = `${r.name}/${r.id || ""}`;
+  if (fresh || state.lastRoute !== where) window.scrollTo(0, 0);
+  state.lastRoute = where;
+  // เนื้อหาเดิมค้างไว้จนหน้าใหม่พร้อม ระหว่างนั้นกดไม่ได้และมีแถบโหลดด้านบน
+  view.onclick = null;
+  view.classList.add("is-loading");
+  const done = () => { if (id === state.renderId) view.classList.remove("is-loading"); };
+  entry[1](view, r.id, () => id === state.renderId)
+    .catch((e) => { if (id === state.renderId) showError(view, e); })
+    .finally(done);
 }

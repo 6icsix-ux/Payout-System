@@ -111,6 +111,17 @@ a { color: var(--blue); text-decoration-thickness: 1px; text-underline-offset: 3
 
 .main { min-width: 0; padding: 32px 40px 80px; max-width: 1160px; width: 100%; margin: 0 auto; }
 
+/* ระหว่างโหลดหน้าใหม่: เนื้อหาเดิมค้างไว้ + แถบโหลดบาง ๆ ด้านบน (ไม่กระพริบ) */
+.main { position: relative; }
+.main.is-loading { pointer-events: none; }
+.main.is-loading::before {
+  content: ""; position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 60;
+  background: linear-gradient(90deg, transparent, var(--blue), transparent);
+  background-size: 40% 100%; background-repeat: no-repeat;
+  animation: loadbar 1s ease-in-out infinite; animation-delay: .15s; opacity: 0;
+}
+@keyframes loadbar { 0% { background-position: -40% 0; opacity: 1; } 100% { background-position: 140% 0; opacity: 1; } }
+
 /* ---------- page header ---------- */
 .page-head { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 22px; }
 .h-count {
@@ -492,8 +503,14 @@ tr.off td { color: var(--ink-3); }
   .date-pick { flex: 1; justify-content: center; height: 44px; }
   .search input { height: 52px; }
   .search-line { flex: 1 1 100%; width: 100%; height: 48px; }
-  .pager-info { order: 3; width: 100%; text-align: center; margin: 0; }
-  .pager-nav { margin-left: auto; }
+  .pager { gap: 8px 10px; padding: 8px 10px; flex-wrap: wrap; }
+  .pager-size { gap: 6px; }
+  .pager-size .unit { display: none; }
+  .pager-size select { min-height: 40px; padding: 4px 8px; }
+  .pager-nav { margin-left: auto; gap: 4px; }
+  .pager-nav .btn { min-height: 40px; width: 40px; padding: 0; }
+  .pager-pos { min-width: 48px; }
+  .pager-info { order: 3; width: 100%; text-align: center; margin: 0; font-size: 13px; }
 
   /* ตารางกลายเป็นการ์ดบนมือถือ */
   .rtable thead { display: none; }
