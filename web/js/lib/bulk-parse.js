@@ -149,51 +149,94 @@ export function nameKey(name) {
     .replace(/[^\p{L}\p{M}\p{N}]/gu, "");
 }
 
-// รวมยอดแบบ 475+475-320 (รับแค่ตัวเลข + - .)
-function sumExpr(expr) {
-  const clean = expr.replace(/[\s*,]/g, "");
-  if (!clean || !/^[+-]?\d+(\.\d+)?([+-]\d+(\.\d+)?)*$/.test(clean)) return null;
-  return (clean.match(/[+-]?\d+(\.\d+)?/g) || []).reduce((s, n) => s + Number(n), 0);
+const THAI_DIGITS = "๐๑๒๓๔๕๖๗๘๙";
+const LETTER = /[A-Za-zก-ฮ]/;
+const UNITS = /(บาท|บ\.|฿|thb|ค่ะ|คะ|ครับ|คับ|จ้า|จ้ะ)/gi;
+
+// คำนวณ 475+475-320 หรือ 2500x2 หรือ 95×4 (คูณก่อนบวกลบ)
+function evalExpr(expr) {
+  const e = expr.replace(/[\s,]/g, "").replace(/[x×X]/g, "*").replace(/^[*+]+|[*+-]+$/g, "");
+  if (!e || !/^-?\d+(\.\d+)?([+\-*]\d+(\.\d+)?)*$/.test(e)) return null;
+  return e.split(/(?=[+-])/).reduce((sum, term) => {
+    const sign = term.startsWith("-") ? -1 : 1;
+    return sum + sign * term.replace(/^[+-]/, "").split("*").reduce((p, f) => p * Number(f), 1);
+  }, 0);
 }
-const toNumber = (s) => {
-  const n = Number(String(s).replace(/[\s*,]/g, ""));
-  return Number.isFinite(n) ? n : null;
-};
+
+// ดึงนิพจน์ตัวเลขจากต้นข้อความ ถ้ามีตัวอักษรติดกับตัวเลข (เช่น 3OO) ถือว่าอ่านไม่ได้
+function takeExpr(text) {
+  const t = text.replace(/^[^\d]+/, "");
+  const m = t.match(/^[\d,.\s+\-*x×X]*\d/);
+  if (!m) return null;
+  if (LETTER.test(t.charAt(m[0].length))) return null;
+  return m[0];
+}
+
+function normalizeLine(raw) {
+  let s = String(raw).normalize("NFKC").replace(/[๐-๙]/g, (d) => THAI_DIGITS.indexOf(d));
+  // ก๊อปจากแชทไลน์: "21:05<tab>ชื่อคนส่ง<tab>ข้อความ"
+  const chat = s.match(/^\s*\d{1,2}[:.]\d{2}\t[^\t]*\t(.*)$/);
+  if (chat) s = chat[1];
+  s = s.replace(/\t/g, " ")
+    .replace(/^\s*\d{1,2}:\d{2}\s+/, "")                // เวลานำหน้า
+    .replace(/^\s*\(\s*\$\s*\)\s*[:：]?\s*/, "")          // ($):
+    .replace(/^\s*\d{1,3}[.)]\s+/, "")                  // 1. หรือ 2)
+    .trim();
+  return s;
+}
+
+const IGNORE = (s) => !/[\p{L}\d]/u.test(s) || /^\[[^\]]*\]$/.test(s)
+  || (!s.includes("@") && /^(รวม|ยอดรวม|สรุป|total|sum)/i.test(s));
 
 export function parsePayoutLine(raw) {
-  const out = { raw, name: "", amount: null, notes: [] };
-  let line = raw.replace(/^\s*\(\s*\$\s*\)\s*[:：]?\s*/, "").trim(); // ตัด ($):
-  if (!line) return null;
+  const line = normalizeLine(raw);
+  if (!line || IGNORE(line)) return null;
+  const out = { raw: String(raw).trim(), name: "", amount: null, notes: [] };
 
   let namePart, amtPart;
-  const plus = line.match(/[(（]\s*\+\s*[)）]/); // (+) หรือ ( + )
+  const plus = line.match(/\(\s*\+\s*\)/);
   if (plus) {
     namePart = line.slice(0, plus.index);
     amtPart = line.slice(plus.index + plus[0].length);
   } else {
-    // ไม่มี (+): ตัวเลขชุดท้ายบรรทัดคือยอด
-    const m = line.replace(/\s*(บาท|บ\.|฿|thb)\s*$/i, "").match(/^(.*?)[\s:：]+([\d,.\s+\-*=]+)$/i);
-    if (!m) { out.name = line.replace(/^[@＠]+/, "").trim(); out.notes.push("ไม่พบยอดเงิน"); return out; }
+    // ไม่มี (+): ตัวเลขชุดท้ายบรรทัดคือยอด ต้องเว้นวรรคหรือมีเครื่องหมายคั่นจากชื่อ
+    const tail = line.replace(UNITS, " ").replace(/\.-/g, "").replace(/[^\d)]*$/, "").replace(/\(\D*\)$/, "").trim();
+    const m = tail.match(/^(.*?)(?:\s*[:=+]+\s*|\s+)(-?\d[\d,.]*(?:\s*[+\-*x×=]\s*\**\d[\d,.]*\**)*)$/);
+    if (!m) { out.name = cleanName(line); out.notes.push("ไม่พบยอดเงิน"); return out; }
     namePart = m[1]; amtPart = m[2];
   }
-  out.name = namePart.replace(/^[\s@＠]+/, "").replace(/[\s:：+]+$/, "").trim();
-  // ตัดสิ่งที่อยู่หน้าตัวเลขแรก (++ + : =) และหน่วยเงินท้ายบรรทัด
-  amtPart = amtPart.replace(/(บาท|บ\.|฿|thb)/gi, " ").replace(/^[^\d]+/, "");
+  out.name = cleanName(namePart);
 
-  const eq = amtPart.lastIndexOf("=");
+  let a = amtPart.replace(/\(\s*\+\s*\)/g, "+").replace(UNITS, " ").replace(/\.-/g, "");
+  if (/^\s*-\s*\d/.test(a)) { out.notes.push("ยอดติดลบ"); return out; }
+
+  const eq = a.lastIndexOf("=");
+  let calc = null, stated = null;
   if (eq >= 0) {
-    const stated = toNumber(amtPart.slice(eq + 1));
-    const calc = sumExpr(amtPart.slice(0, eq));
-    out.amount = stated ?? calc;
+    const left = takeExpr(a.slice(0, eq));
+    calc = left ? evalExpr(left) : null;
+    const right = takeExpr(a.slice(eq + 1));
+    stated = right && /^[\d,.\s]+$/.test(right) ? Number(right.replace(/[\s,]/g, "")) : null;
+    if (stated == null && a.slice(eq + 1).trim()) out.notes.push("อ่านยอดหลัง = ไม่ได้ ใช้ยอดที่คำนวณแทน");
     if (stated != null && calc != null && Math.abs(stated - calc) > 0.001) {
       out.notes.push(`ยอดที่เขียนไว้ ${stated} ไม่ตรงกับที่คำนวณได้ ${calc}`);
     }
   } else {
-    out.amount = sumExpr(amtPart);
+    const expr = takeExpr(a);
+    calc = expr ? evalExpr(expr) : null;
   }
-  if (out.amount == null || !(out.amount > 0)) { out.amount = null; out.notes.push("อ่านยอดเงินไม่ได้"); }
-  else out.amount = Math.round(out.amount * 100) / 100;
+  if (/(^|[^\d,.])\d{1,3}\.\d{3}(?![\d,.])/.test(a)) out.notes.push("ตัวเลขมีจุดตามด้วย 3 หลัก ถ้าตั้งใจเป็นหลักพัน แก้ยอดก่อนส่ง");
+  const amount = stated ?? calc;
+  if (amount == null || !(amount > 0)) out.notes.push("อ่านยอดเงินไม่ได้");
+  else out.amount = Math.round(amount * 100) / 100;
   return out;
+}
+
+function cleanName(part) {
+  let n = part;
+  const at = n.search(/[@＠]/);
+  if (at >= 0) n = n.slice(at + 1);
+  return n.replace(/[\s:：+=]+$/, "").replace(/\s+/g, " ").trim();
 }
 
 export function parseBulkPayout(text) {
