@@ -1,7 +1,7 @@
 // ส่วนประกอบหน้าจอที่ใช้ร่วมกัน: toast, หน้าต่าง, สลิป, รายการ
 import { STATUS_TH } from "./config.js";
 import { acctFmt, baht, bankName, clock, errMsg, isOwner, lineName, money, ownerLine, when } from "./format.js";
-import { html, raw } from "./html.js";
+import { esc, html, raw } from "./html.js";
 import { ICON, svg } from "./icons.js";
 import { state } from "./state.js";
 
@@ -56,12 +56,13 @@ export async function copyText(text, btn) {
     try { ok = document.execCommand("copy"); } catch { ok = false; }
     ta.remove();
   }
-  if (!ok) return toast("คัดลอกไม่ได้ กรุณาจดเลขเอง", true);
+  if (!ok) { toast("คัดลอกไม่ได้ กรุณาจดเลขเอง", true); return false; }
   if (btn) {
     const label = btn.innerHTML;
     btn.classList.add("copied"); btn.textContent = "คัดลอกแล้ว";
     setTimeout(() => { btn.classList.remove("copied"); btn.innerHTML = label; }, 1600);
   }
+  return true;
 }
 
 // ปุ่ม submit ระหว่างทำงาน กันกดซ้ำ
@@ -104,12 +105,12 @@ export const lineOptions = (selected = "") => state.lines.map((l) =>
 
 export const meta = (...items) => html`<div class="meta">${items.filter(Boolean).map((t) => html`<span>${t}</span>`)}</div>`;
 
-export function payoutEntry(p, actions = "", { link = true } = {}) {
+export function payoutEntry(p, actions = "", { link = true, copy = false } = {}) {
   return html`<div class="entry">
-    <div class="entry-main">
+    <div class="entry-main${copy ? " copyable" : ""}" ${copy ? raw(`data-copy-acct="${esc(p.account_number)}" role="button" tabindex="0" title="แตะเพื่อคัดลอกเลขบัญชี"`) : ""}>
       <div class="entry-title">${link
         ? html`<a href="#/c/${p.customer_id}">${p.customer_line_name}</a>` : p.customer_line_name} ${stamp(p.status)}</div>
-      ${acctLine(p)}
+      ${acctLine(p)}${copy ? html`<span class="copy-hint">${svg(ICON.copy, 14)}แตะเพื่อคัดลอกเลขบัญชี</span>` : ""}
       ${meta(
         p.creator?.display_name && `ส่งโดย ${p.creator.display_name}`,
         when(p.created_at),
