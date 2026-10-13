@@ -12,7 +12,7 @@ export async function viewReport(v, _id, alive) {
   const to = `${shiftDay(day, 1)}T00:00:00+07:00`;
   const { data, error } = await scope(sb.from("payout_requests").select(PCOLS)
     .in("status", ["transferred", "confirmed"]).gte("transferred_at", from).lt("transferred_at", to))
-    .order("transferred_at");
+    .order("transferred_at", { ascending: false });
   if (!alive()) return;
   if (error) return showError(v, error);
 

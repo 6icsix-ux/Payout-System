@@ -261,6 +261,33 @@ a.entry:hover { background: #fafbfe; }
 .pager-nav { display: flex; align-items: center; gap: 8px; }
 .pager-pos { min-width: 64px; text-align: center; font-weight: 600; }
 
+/* รูปประกอบคิวโอน */
+.img-section {
+  background: var(--surface); border: 1px solid var(--rule); border-radius: var(--r-lg);
+  box-shadow: var(--lift); padding: 4px 18px 18px; margin-bottom: 8px;
+}
+.img-section .section-head { margin: 14px 0 12px; }
+.img-upload { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+.img-upload select { width: auto; }
+.img-add.is-busy { opacity: .7; pointer-events: none; }
+.img-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.img-tile { position: relative; margin: 0; }
+.img-thumb {
+  display: block; width: 100%; aspect-ratio: 3 / 4; padding: 0; border: 1px solid var(--rule);
+  border-radius: 12px; overflow: hidden; background: var(--sunk); cursor: zoom-in;
+}
+.img-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.img-thumb:hover { border-color: var(--blue); }
+.img-tile figcaption { font-size: 12.5px; color: var(--ink-3); margin-top: 6px; text-align: center; overflow-wrap: anywhere; }
+.img-del {
+  position: absolute; top: 6px; right: 6px; width: 30px; height: 30px; border-radius: 50%;
+  border: 0; background: rgba(14,22,40,.72); color: #fff; font-size: 18px; line-height: 1; cursor: pointer;
+}
+.img-del:hover { background: var(--red); }
+.img-empty { color: var(--ink-3); font-size: 14px; padding: 18px; text-align: center; border: 1.5px dashed var(--rule-2); border-radius: 12px; }
+.img-view { background: var(--sunk); border-radius: 12px; overflow: hidden; text-align: center; }
+.img-view img { max-width: 100%; max-height: 72vh; display: block; margin: 0 auto; }
+
 /* ตราประทับสถานะ */
 .stamp {
   display: inline-block; font-size: 12.5px; font-weight: 700; line-height: 1;
@@ -484,6 +511,10 @@ tr.off td { color: var(--ink-3); }
   .slip-acct { font-size: 26px; }
   .slip-amount .v { font-size: 32px; }
   .hide-sm { display: none; }
+  .img-section { padding: 2px 12px 12px; }
+  .img-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .img-hint { display: none; }
+  .img-upload .btn { flex: 1; }
 
   /* ฟอร์มและปุ่มขนาดนิ้ว (16px กัน iPhone ซูมตอนแตะช่องกรอก) */
   input[type=text], input[type=password], input[type=number], input[type=date], input[type=search], select, textarea { font-size: 16px; min-height: 46px; }

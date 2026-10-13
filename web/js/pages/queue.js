@@ -4,14 +4,17 @@ import { errMsg, money, scope } from "../core/format.js";
 import { html } from "../core/html.js";
 import { route } from "../core/router.js";
 import { state } from "../core/state.js";
+import { gallery, handleGalleryClick, loadTodayImages } from "../core/images.js";
 import { busy, emptyBox, isModalOpen, meta, openModal, payoutEntry, showError, slip, toast } from "../core/ui.js";
 
 export async function viewQueue(v, _id, alive) {
-  const [pend, trans] = await Promise.all([
+  const [pend, trans, imgs] = await Promise.all([
     scope(sb.from("payout_requests").select(PCOLS).eq("status", "pending")).order("created_at").limit(300),
     // รายการค้างจากระบบเดิม (โอนแล้วแต่ยังไม่ยืนยัน)
     scope(sb.from("payout_requests").select(PCOLS).eq("status", "transferred")).order("transferred_at").limit(300),
+    loadTodayImages(),
   ]);
+  const images = imgs.images;
   if (!alive()) return;
   if (pend.error || trans.error) return showError(v, pend.error || trans.error);
   const pending = pend.data;
@@ -23,6 +26,12 @@ export async function viewQueue(v, _id, alive) {
   <div class="page-head"><h1>คิวโอน</h1>
     <button class="btn btn-sm" data-act="refresh">โหลดใหม่</button>
     <div class="page-meta"><span>อัปเดตเองทุก 20 วินาที</span></div></div>
+
+  <section class="img-section">
+    <div class="section-head img-head"><h2>รูปวันนี้</h2>
+      <span class="sum">${images.length ? `${images.length} รูป กดเพื่อดูรูปใหญ่` : ""}</span></div>
+    ${imgs.error ? html`<div class="img-empty">โหลดรูปไม่สำเร็จ</div>` : gallery(images)}
+  </section>
 
   ${legacy.length ? html`
     <div class="section-head"><h2>ค้างยืนยันจากระบบเดิม</h2>${sum(legacy)}</div>
@@ -37,6 +46,7 @@ export async function viewQueue(v, _id, alive) {
 
   const all = [...pending, ...trans.data];
   v.onclick = (e) => {
+    if (handleGalleryClick(e, images, () => route())) return;
     const b = e.target.closest("[data-act]");
     if (!b) return;
     if (b.dataset.act === "refresh") return route();

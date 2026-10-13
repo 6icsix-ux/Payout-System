@@ -115,6 +115,8 @@ export const VIEWS = {
 
 export function route() {
   clearInterval(state.timer);
+  // เลิกฟังเหตุการณ์ของหน้าก่อน (เช่น การวางรูป)
+  if (state.cleanup) { state.cleanup(); state.cleanup = null; }
   closeModal();
   if (!configured) {
     app.innerHTML = html`<div class="login-wrap"><div class="login">${BRAND}<h1>ยังไม่ได้ตั้งค่า</h1>
