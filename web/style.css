@@ -321,6 +321,13 @@ a.entry:hover { background: #fafbfe; }
 .confirm-row:first-child { border-top: 0; }
 .confirm-row .nm { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
 .confirm-row .am { font-weight: 700; text-align: right; min-width: 90px; }
+.confirm-row.copyable { cursor: copy; transition: background .15s; }
+.confirm-row.copyable:hover { background: var(--blue-soft); }
+.confirm-row.copyable:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+.confirm-row.copied { background: var(--green-soft); }
+.confirm-row .copy-ico { display: inline-flex; vertical-align: -2px; margin-left: 4px; color: var(--blue); }
+.confirm-row.copied .copy-ico { color: var(--green); }
+.confirm-hint { display: flex; align-items: center; gap: 4px; margin: 8px 2px 0; color: var(--blue); }
 .confirm-total { display: flex; justify-content: space-between; align-items: baseline; margin: 12px 4px 0; font-weight: 600; }
 .confirm-total .num { font-size: 26px; font-weight: 700; color: var(--blue); }
 .confirm-total small { font-size: 14px; color: var(--ink-3); font-weight: 500; }

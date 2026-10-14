@@ -2,10 +2,21 @@
 import { PCOLS, sb } from "../core/config.js";
 import { acctFmt, bankName, clock, errMsg, money, scope } from "../core/format.js";
 import { html } from "../core/html.js";
+import { ICON, svg } from "../core/icons.js";
 import { route } from "../core/router.js";
 import { state } from "../core/state.js";
 import { gallery, handleGalleryClick, loadBatchImages } from "../core/images.js";
 import { copyText, busy, emptyBox, isModalOpen, meta, openModal, payoutEntry, showError, slip, toast } from "../core/ui.js";
+
+// แตะรายการเพื่อคัดลอกเลขบัญชี (ใช้ทั้งในหน้าคิวและหน้าต่างยืนยันหลายรายการ)
+function copyRow(el) {
+  copyText(el.dataset.copyAcct, null).then((ok) => {
+    if (ok === false) return;
+    el.classList.add("copied");
+    setTimeout(() => el.classList.remove("copied"), 900);
+    toast(`คัดลอกเลขบัญชี ${el.dataset.copyAcct} แล้ว`);
+  });
+}
 
 // ปุ่มยืนยันทั้งหมดใต้รายการแต่ละกลุ่ม
 const confirmAllBar = (rows, kind = "pending") => html`<div class="confirm-bar">
@@ -61,7 +72,10 @@ export async function viewQueue(v, _id, alive) {
   const legacy = trans.data.filter((p) => p.transferred_by === state.me.id);
   const total = (rows) => money(rows.reduce((s, p) => s + Number(p.amount), 0));
   const pendingActions = (p) => html`
-      <button class="btn btn-sm btn-quiet btn-danger" data-act="return" data-id="${p.id}">ส่งกลับ</button>`;
+      <button class="btn btn-sm btn-quiet btn-danger" data-act="return" data-id="${p.id}">ส่งกลับ</button>
+      <button class="btn btn-sm btn-primary" data-act="confirm" data-id="${p.id}">ยืนยันการโอน</button>`;
+  const legacyActions = (p) => html`
+      <button class="btn btn-sm btn-primary" data-act="confirm" data-kind="legacy" data-id="${p.id}">ยืนยันการโอน</button>`;
   const sum = (rows) => html`<span class="sum">${rows.length} รายการ รวม <b>${total(rows)}</b> บาท</span>`;
 
   v.innerHTML = html`
@@ -73,21 +87,13 @@ export async function viewQueue(v, _id, alive) {
 
   ${legacy.length ? html`
     <div class="section-head"><h2>ค้างยืนยันจากระบบเดิม</h2>${sum(legacy)}</div>
-    <div class="plain-group">${rowsOf(legacy, () => "")}${confirmAllBar(legacy, "legacy")}</div>` : ""}
+    <div class="plain-group">${rowsOf(legacy, legacyActions)}${confirmAllBar(legacy, "legacy")}</div>` : ""}
 
   <div class="section-head"><h2>รอโอน</h2>${sum(pending)}</div>
   ${pending.length ? withBatches(pending, byBatch, pendingActions)
     : emptyBox("ไม่มีรายการรอโอน", "รายการใหม่จากสมาชิกจะขึ้นที่นี่")}`.s;
 
   const all = [...pending, ...trans.data];
-  const copyRow = (el) => {
-    copyText(el.dataset.copyAcct, null).then((ok) => {
-      if (ok === false) return;
-      el.classList.add("copied");
-      setTimeout(() => el.classList.remove("copied"), 900);
-      toast(`คัดลอกเลขบัญชี ${el.dataset.copyAcct} แล้ว`);
-    });
-  };
   v.onclick = (e) => {
     if (handleGalleryClick(e, images, () => route())) return;
     const b = e.target.closest("[data-act]");
@@ -102,6 +108,7 @@ export async function viewQueue(v, _id, alive) {
       return confirmAllModal(all.filter((x) => ids.includes(x.id)), b.dataset.kind);
     }
     const p = all.find((x) => x.id === b.dataset.id);
+    if (b.dataset.act === "confirm") confirmOneModal(p, b.dataset.kind);
     if (b.dataset.act === "return") returnModal(p);
   };
   v.onkeydown = (e) => {
@@ -117,10 +124,12 @@ export function confirmAllModal(rows, kind = "pending") {
   openModal({
     title: `ยืนยันการโอน ${rows.length} รายการ`,
     wide: true,
-    body: html`<div class="confirm-list">${rows.map((p) => html`<div class="confirm-row">
+    body: html`<div class="confirm-list">${rows.map((p) => html`<div class="confirm-row copyable" data-copy-acct="${p.account_number}" role="button" tabindex="0" title="แตะเพื่อคัดลอกเลขบัญชี">
         <span class="nm">${p.customer_line_name}</span>
-        <span class="bk"><span class="bank">${bankName(p.bank_code)}</span> <span class="num">${acctFmt(p.account_number)}</span></span>
+        <span class="bk"><span class="bank">${bankName(p.bank_code)}</span> <span class="num">${acctFmt(p.account_number)}</span>
+          <span class="copy-ico">${svg(ICON.copy, 15)}</span></span>
         <span class="am num">${money(p.amount)}</span></div>`)}</div>
+      <p class="small-print confirm-hint">${svg(ICON.copy, 14)} แตะรายการเพื่อคัดลอกเลขบัญชี</p>
       <div class="confirm-total"><span>รวม ${rows.length} รายการ</span><span class="num">${money(totalAmt)} <small>บาท</small></span></div>
       <label class="check-line"><input type="checkbox" name="ok">
         <span>โอนครบทุกรายการแล้ว และตรวจกับแอปธนาคารแล้ว ชื่อ เลขบัญชี และยอดเงินตรงกัน</span></label>
@@ -130,6 +139,12 @@ export function confirmAllModal(rows, kind = "pending") {
     onMount: (form, close) => {
       const submit = form.querySelector("[type=submit]");
       form.ok.onchange = () => { submit.disabled = !form.ok.checked; };
+      const list = form.querySelector(".confirm-list");
+      list.onclick = (e) => { const row = e.target.closest("[data-copy-acct]"); if (row) copyRow(row); };
+      list.onkeydown = (e) => {
+        const row = e.target.closest("[data-copy-acct]");
+        if (row && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); copyRow(row); }
+      };
       form.onsubmit = (e) => {
         e.preventDefault();
         if (!form.ok.checked) return;
@@ -147,6 +162,36 @@ export function confirmAllModal(rows, kind = "pending") {
           close();
           if (failed.length) toast(`ยืนยันแล้ว ${ok} รายการ ไม่สำเร็จ ${failed.length}: ${failed[0]}`, true);
           else toast(`ยืนยันการโอน ${ok} รายการ แล้ว`);
+          route();
+        });
+      };
+    },
+  });
+}
+
+// ยืนยันทีละรายการ: แสดงสลิป ติ๊กว่าโอนแล้ว แล้วยืนยัน
+export function confirmOneModal(p, kind = "pending") {
+  openModal({
+    title: "ยืนยันการโอน",
+    body: html`${slip(p)}
+      <label class="check-line" style="margin-top:16px"><input type="checkbox" name="ok">
+        <span>โอนแล้ว และตรวจกับแอปธนาคารแล้ว ชื่อ เลขบัญชี และยอดเงินตรงกัน</span></label>
+      <p class="small-print">ยืนยันแล้วแก้ไขไม่ได้อีก</p>`,
+    foot: html`<button type="button" class="btn btn-quiet" data-close>ยังไม่โอน</button>
+      <button type="submit" class="btn btn-primary btn-lg" disabled>ยืนยันการโอน</button>`,
+    onMount: (form, close) => {
+      const submit = form.querySelector("[type=submit]");
+      form.ok.onchange = () => { submit.disabled = !form.ok.checked; };
+      form.onsubmit = (e) => {
+        e.preventDefault();
+        if (!form.ok.checked) return;
+        busy(submit, async () => {
+          const { error } = kind === "legacy"
+            ? await sb.rpc("confirm_transfer", { p_id: p.id })
+            : await sb.rpc("confirm_payout", { p_id: p.id, p_version: p.version });
+          close();
+          if (error) { toast(errMsg(error), true); return route(); }
+          toast(`ยืนยันการโอน ${p.customer_line_name} ${money(p.amount)} บาท แล้ว`);
           route();
         });
       };
