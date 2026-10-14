@@ -302,12 +302,15 @@ a.entry:hover { background: #fafbfe; }
 .img-view img { max-width: 100%; max-height: 72vh; display: block; margin: 0 auto; }
 
 /* คิวโอน: แตะรายการเพื่อคัดลอกเลขบัญชี + ปุ่มยืนยันทั้งหมดใต้กลุ่ม */
-.entry-main.copyable { cursor: copy; border-radius: 10px; margin: -6px -8px; padding: 6px 8px; transition: background .15s; }
-.entry-main.copyable:hover { background: var(--blue-soft); }
-.entry-main.copyable:focus-visible { outline: 2px solid var(--blue); }
-.entry-main.copyable.copied { background: var(--green-soft); }
+.entry-main.copy-acct { justify-self: start; width: fit-content; min-width: min(100%, 480px); max-width: 100%; cursor: copy; border-radius: 12px;
+  margin: -10px -16px; padding: 10px 16px; border: 1.5px solid transparent; transition: background .15s, border-color .15s; }
+.entry-main.copy-acct:hover { border-color: var(--blue); }
+.copy-acct:hover { background: var(--blue-soft); }
+.copy-acct:focus-visible { outline: 2px solid var(--blue); }
+.copy-acct.copied { background: var(--green-soft); }
 .copy-hint { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--blue); margin-top: 2px; }
-.entry-main.copyable.copied .copy-hint { color: var(--green); }
+.copy-hint { width: fit-content; }
+.copy-acct.copied .copy-hint { color: var(--green); }
 .confirm-bar {
   display: flex; align-items: center; justify-content: flex-end; gap: 16px; flex-wrap: wrap;
   margin-top: 12px; padding: 12px 16px; background: var(--surface); border: 1px solid var(--rule);
@@ -321,6 +324,14 @@ a.entry:hover { background: #fafbfe; }
 .confirm-row:first-child { border-top: 0; }
 .confirm-row .nm { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
 .confirm-row .am { font-weight: 700; text-align: right; min-width: 90px; }
+/* คิวโอน: ช่องติ๊กซ้ายสุด แตะทั้งแถวเพื่อเลือก */
+.entry.pickable { grid-template-columns: auto 1fr auto; cursor: pointer; transition: background .15s; user-select: none; }
+.entry.pickable:hover { background: #fafbfe; }
+.pick-lead { display: flex; align-items: center; justify-content: center; align-self: stretch; margin: -16px 0 -16px -20px; padding: 0 4px 0 20px; cursor: pointer; }
+.pick-lead input { width: 22px; height: 22px; margin: 0; accent-color: var(--blue); cursor: pointer; }
+.entry.picked, .entry.picked:hover { background: #eef3ff; box-shadow: inset 4px 0 0 var(--blue); }
+.confirm-bar [data-act=clear-pick] { margin-left: -6px; }
+.confirm-bar [data-act=clear-pick][hidden] { display: none; }
 .confirm-row.copyable { cursor: copy; transition: background .15s; }
 .confirm-row.copyable:hover { background: var(--blue-soft); }
 .confirm-row.copyable:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
@@ -540,6 +551,10 @@ tr.off td { color: var(--ink-3); }
   .page-head h1 { font-size: 22px; }
   .entry { grid-template-columns: 1fr; padding: 14px 16px; }
   .entry-side { justify-content: space-between; }
+  .entry.pickable { grid-template-columns: auto 1fr; column-gap: 12px; }
+  .entry.pickable .pick-lead { grid-row: 1 / span 2; margin: -14px 0 -14px -16px; padding: 0 2px 0 16px; }
+  .entry.pickable .entry-side { grid-column: 2; }
+  .entry-main.copy-acct { min-width: 0; width: auto; justify-self: stretch; margin: -8px 0 -8px -10px; padding: 8px 10px; }
   .daybar { padding: 18px; gap: 16px 24px; }
   .daybar .total { width: 100%; }
   .daybar .total .v { font-size: 30px; }

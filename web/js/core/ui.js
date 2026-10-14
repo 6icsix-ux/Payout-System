@@ -105,9 +105,11 @@ export const lineOptions = (selected = "") => state.lines.map((l) =>
 
 export const meta = (...items) => html`<div class="meta">${items.filter(Boolean).map((t) => html`<span>${t}</span>`)}</div>`;
 
-export function payoutEntry(p, actions = "", { link = true, copy = false } = {}) {
-  return html`<div class="entry">
-    <div class="entry-main${copy ? " copyable" : ""}" ${copy ? raw(`data-copy-acct="${esc(p.account_number)}" role="button" tabindex="0" title="แตะเพื่อคัดลอกเลขบัญชี"`) : ""}>
+// copy: แตะกล่องรายละเอียดเพื่อคัดลอกเลขบัญชี | pick: มีช่องติ๊กซ้ายสุด แตะตรงไหนของแถวก็ติ๊กได้ ({ checked })
+export function payoutEntry(p, actions = "", { link = true, copy = false, pick = null } = {}) {
+  return html`<div class="entry${pick ? " pickable" : ""}">
+    ${pick ? html`<label class="pick-lead" title="เลือกรายการนี้"><input type="checkbox" data-pick="${p.id}" data-amt="${p.amount}" aria-label="เลือก ${p.customer_line_name}" ${pick.checked ? raw("checked") : ""}></label>` : ""}
+    <div class="entry-main${copy ? " copy-acct" : ""}" ${copy ? raw(`data-copy-acct="${esc(p.account_number)}" role="button" tabindex="0" title="แตะเพื่อคัดลอกเลขบัญชี"`) : ""}>
       <div class="entry-title">${link
         ? html`<a href="#/c/${p.customer_id}">${p.customer_line_name}</a>` : p.customer_line_name} ${stamp(p.status)}</div>
       ${acctLine(p)}${copy ? html`<span class="copy-hint">${svg(ICON.copy, 14)}แตะเพื่อคัดลอกเลขบัญชี</span>` : ""}
