@@ -381,6 +381,25 @@ tr.off td { color: var(--ink-3); }
 .daybar .total .k { color: var(--navy-ink); font-size: 14px; }
 .daybar .total .v { font-family: var(--num); font-variant-numeric: tabular-nums; font-size: 36px; font-weight: 700; line-height: 1.15; }
 .daybar .total .v small { font-size: 16px; font-weight: 500; color: var(--navy-ink); margin-left: 6px; }
+.daybar .total .sub { color: var(--navy-ink); font-size: 13.5px; margin-top: 4px; }
+/* ยอดแยกตามแอดมิน */
+.admin-sums { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
+.admin-sum { min-width: 160px; padding: 10px 16px; border-radius: 12px; background: rgba(255, 255, 255, .08); border: 1px solid rgba(255, 255, 255, .14);
+  color: #fff; font: inherit; text-align: left; cursor: pointer; transition: background .15s, border-color .15s, opacity .15s; }
+.admin-sum:hover { background: rgba(255, 255, 255, .14); border-color: rgba(255, 255, 255, .3); }
+.admin-sum:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.admin-sum.active { background: #fff; border-color: #fff; color: var(--navy); }
+.admin-sum.active .k, .admin-sum.active .n, .admin-sum.active .v small { color: var(--blue); }
+.admin-sum.dim { opacity: .45; }
+.filter-note { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; margin: -6px 0 12px; padding: 10px 14px;
+  border-radius: 12px; background: var(--blue-soft); color: var(--ink-2); font-size: 14.5px; }
+.filter-note[hidden] { display: none; }
+.filter-note .btn { margin-left: auto; }
+.rtable tr[hidden] { display: none; }
+.admin-sum .k { color: var(--navy-ink); font-size: 13.5px; font-weight: 600; overflow-wrap: anywhere; }
+.admin-sum .v { font-family: var(--num); font-variant-numeric: tabular-nums; font-size: 22px; font-weight: 700; line-height: 1.25; }
+.admin-sum .v small { font-size: 13px; font-weight: 500; color: var(--navy-ink); margin-left: 4px; }
+.admin-sum .n { color: var(--navy-ink); font-size: 12.5px; }
 .daybar .stat .k { color: var(--navy-ink); font-size: 13px; }
 .daybar .stat .v { font-family: var(--num); font-size: 22px; font-weight: 600; }
 .day-nav { display: flex; align-items: center; gap: 6px; }
@@ -558,6 +577,8 @@ tr.off td { color: var(--ink-3); }
   .daybar { padding: 18px; gap: 16px 24px; }
   .daybar .total { width: 100%; }
   .daybar .total .v { font-size: 30px; }
+  .admin-sums { width: 100%; justify-content: stretch; }
+  .admin-sum { flex: 1 1 140px; min-width: 0; }
   .modal-backdrop { align-items: flex-end; padding: 0; }
   .modal { border-radius: 20px 20px 0 0; max-height: 92vh; overflow-y: auto; animation: sheet .2s ease-out; }
   .modal-foot { padding-bottom: calc(18px + env(safe-area-inset-bottom)); }

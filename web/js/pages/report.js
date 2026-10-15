@@ -1,10 +1,13 @@
 // หน้ารายงานรายวัน
 import { PCOLS, sb } from "../core/config.js";
-import { acctFmt, bankName, clock, dayFmt, isOwner, lineName, money, ownerLine, scope, session, shiftDay, thaiDate, todayBkk } from "../core/format.js";
+import { acctFmt, bankName, clock, dayFmt, isOwner, lineName, money, ownerLine, rank, scope, session, shiftDay, thaiDate, todayBkk } from "../core/format.js";
 import { html, raw } from "../core/html.js";
 import { ICON, svg } from "../core/icons.js";
 import { route } from "../core/router.js";
 import { emptyBox, meta, showError, stamp } from "../core/ui.js";
+
+// แอดมินที่ผู้ดูแลกดเลือกไว้ (แสดงเฉพาะรายการของคนนั้น) ล้างเมื่อเปลี่ยนวัน
+let adminFilter = null;
 
 export async function viewReport(v, _id, alive) {
   const day = session("reportDay") || todayBkk();
@@ -20,6 +23,17 @@ export async function viewReport(v, _id, alive) {
   const confirmed = data.filter((p) => p.status === "confirmed").length;
   const showLine = isOwner() && !ownerLine();
   const isToday = day >= todayBkk();
+  // ยอดแยกตามแอดมินที่โอน (มากไปน้อย) ดูได้เฉพาะผู้ดูแลขึ้นไป
+  const showAdmins = rank() >= 3;
+  const byAdmin = new Map();
+  for (const p of data) {
+    const k = p.transferred_by || "-";
+    const a = byAdmin.get(k) || { key: k, name: p.transferrer?.display_name || "ไม่ทราบชื่อ", sum: 0, n: 0 };
+    a.sum += Number(p.amount); a.n++;
+    byAdmin.set(k, a);
+  }
+  const admins = [...byAdmin.values()].sort((a, b) => b.sum - a.sum);
+  if (!showAdmins || !byAdmin.has(adminFilter)) adminFilter = null;
 
   v.innerHTML = html`
   <div class="page-head"><h1>รายงานรายวัน</h1>
@@ -32,16 +46,25 @@ export async function viewReport(v, _id, alive) {
     <div class="page-meta"><span>${dayFmt.format(new Date(day + "T12:00:00+07:00"))}</span>${ownerLine() ? html`<span>${lineName(ownerLine())}</span>` : ""}</div>
   </div>
 
-  <div class="daybar">
+  ${showAdmins ? html`<div class="daybar">
+    <div class="total"><div class="k">ยอดโอนรวมของวัน</div><div class="v">${money(sum)}<small>บาท</small></div>
+      <div class="sub">${data.length} รายการ · ยืนยันแล้ว ${confirmed}/${data.length}</div></div>
+    ${admins.length ? html`<div class="admin-sums" aria-label="ยอดแยกตามแอดมิน">${admins.map((a) => html`
+      <button type="button" class="admin-sum" data-admin="${a.key}" aria-pressed="false" title="กดเพื่อดูเฉพาะรายการของ ${a.name} กดอีกครั้งเพื่อดูทั้งหมด">
+        <div class="k">${a.name}</div>
+        <div class="v">${money(a.sum)}<small>บาท</small></div>
+        <div class="n">${a.n} รายการ${sum ? ` · ${Math.round((a.sum / sum) * 100)}%` : ""}</div>
+      </button>`)}</div>` : ""}
+  </div>` : html`<div class="daybar">
     <div class="total"><div class="k">ยอดโอนรวมของวัน</div><div class="v">${money(sum)}<small>บาท</small></div></div>
     <div class="stat"><div class="k">รายการ</div><div class="v">${data.length}</div></div>
     <div class="stat"><div class="k">ยืนยันแล้ว</div><div class="v">${confirmed}/${data.length}</div></div>
-  </div>
+  </div>`}
 
   ${data.length ? html`<div class="ledger table-wrap"><table class="rtable">
     <thead><tr><th>เวลา</th>${showLine ? html`<th>สาย</th>` : ""}<th>ลูกค้า</th><th>บัญชีปลายทาง</th>
       <th class="r">ยอด (บาท)</th><th>ผู้โอน</th><th>สถานะ</th></tr></thead>
-    <tbody>${data.map((p) => html`<tr>
+    <tbody>${data.map((p) => html`<tr data-by="${p.transferred_by || "-"}">
       <td class="num" data-label="เวลา">${clock(p.transferred_at)}</td>
       ${showLine ? html`<td data-label="สาย">${lineName(p.line_id)}</td>` : ""}
       <td data-label="ลูกค้า">${p.customer_line_name}</td>
@@ -50,14 +73,38 @@ export async function viewReport(v, _id, alive) {
       <td class="r amount" style="font-size:16px" data-label="ยอด (บาท)">${money(p.amount)}</td>
       <td data-label="ผู้โอน">${p.transferrer?.display_name || ""}</td>
       <td data-label="สถานะ">${stamp(p.status)}</td></tr>`)}</tbody></table></div>`
-    : emptyBox("ไม่มีการโอนในวันนี้", "เลือกวันอื่นจากปฏิทินด้านบน")}`.s;
+    : emptyBox("ไม่มีการโอนในวันนี้", "เลือกวันอื่นจากปฏิทินด้านบน")}
+  <div class="filter-note" hidden></div>`.s;
 
-  const setDay = (d) => { session("reportDay", d); route(); };
+  // กรองตารางตามแอดมินที่เลือก (ไม่ต้องโหลดใหม่)
+  const applyFilter = () => {
+    v.querySelectorAll(".rtable tbody tr").forEach((tr) => { tr.hidden = !!adminFilter && tr.dataset.by !== adminFilter; });
+    v.querySelectorAll("[data-admin]").forEach((b) => {
+      const on = b.dataset.admin === adminFilter;
+      b.setAttribute("aria-pressed", on);
+      b.classList.toggle("active", on);
+      b.classList.toggle("dim", !!adminFilter && !on);
+    });
+    const a = adminFilter && byAdmin.get(adminFilter);
+    const note = v.querySelector(".filter-note");
+    note.hidden = !a;
+    if (a) note.innerHTML = html`<span>แสดงเฉพาะรายการของ <b>${a.name}</b> ${a.n} รายการ รวม <b class="num">${money(a.sum)}</b> บาท</span>
+      <button type="button" class="btn btn-sm btn-quiet" data-admin-clear>แสดงทั้งหมด</button>`.s;
+    // ย้ายบรรทัดแจ้งไปไว้เหนือตาราง
+    const table = v.querySelector(".ledger");
+    if (table && note.nextElementSibling !== table) table.before(note);
+  };
+  applyFilter();
+
+  const setDay = (d) => { adminFilter = null; session("reportDay", d); route(); };
   const dayInput = v.querySelector("#day");
   dayInput.onchange = (e) => e.target.value && setDay(e.target.value);
   // เปิดปฏิทินเมื่อกดตรงไหนก็ได้บนป้ายวันที่
   dayInput.onclick = () => { try { dayInput.showPicker(); } catch { /* เบราว์เซอร์เก่าเปิดเองจากการแตะ */ } };
   v.onclick = (e) => {
+    const tile = e.target.closest("[data-admin]");
+    if (tile) { adminFilter = adminFilter === tile.dataset.admin ? null : tile.dataset.admin; return applyFilter(); }
+    if (e.target.closest("[data-admin-clear]")) { adminFilter = null; return applyFilter(); }
     const b = e.target.closest("[data-day]");
     if (b && !b.disabled) setDay(shiftDay(day, Number(b.dataset.day)));
   };
