@@ -89,13 +89,20 @@ export function bulkPayoutReview(lineId, rows, customers, pending, sourceText, f
   });
 
   // ตัวเลือกลูกค้าชื่อคล้ายกัน แสดงบัญชีให้เห็นชัดก่อนเลือก
-  const acctText = (a) => a ? `${bankName(a.bank_code)} ${acctFmt(a.account_number)}${a.account_name ? ` ${a.account_name}` : ""}` : "ยังไม่มีบัญชี";
+  // บัญชีของตัวเลือก: ธนาคาร + เลขบัญชี แล้วชื่อบัญชีแยกบรรทัด เน้นให้เห็นชัด
+  const acctInfo = (c) => {
+    const a = c.bank_accounts[0];
+    if (!a) return html`<span class="cand-acct">ยังไม่มีบัญชี</span>`;
+    return html`<span class="cand-acct"><span class="bank">${bankName(a.bank_code)}</span> <span class="num">${acctFmt(a.account_number)}</span>
+        ${c.bank_accounts.length > 1 ? html`<span class="cand-more">+${c.bank_accounts.length - 1} บัญชี</span>` : ""}</span>
+      <span class="cand-holder">${a.account_name ? html`ชื่อบัญชี <b>${a.account_name}</b>` : html`<i>ไม่ระบุชื่อบัญชี</i>`}</span>`;
+  };
   const candidatePicker = (it) => it.candidates.length ? html`<div class="cand-pick" role="radiogroup" aria-label="เลือกลูกค้าที่ถูกคน">
     <div class="cand-title">มีลูกค้าชื่อเหมือนหรือคล้ายกัน ${it.candidates.length} คน แตะเลือกคนที่ถูกต้อง</div>
     ${it.candidates.map((id) => { const c = byId.get(id); return html`<label class="cand">
       <input type="radio" name="cand-${it.i}" value="${id}" data-f="customer_id" ${id === it.customer_id ? raw("checked") : ""}>
       <span class="cand-body"><span class="cand-name">${c.line_name}${it.exactIds.has(id) ? html` <span class="cand-tag">ชื่อตรงกับข้อความ</span>` : ""}</span>
-        <span class="cand-acct">${acctText(c.bank_accounts[0])}${c.bank_accounts.length > 1 ? ` (+${c.bank_accounts.length - 1} บัญชี)` : ""}</span></span>
+        ${acctInfo(c)}</span>
     </label>`; })}</div>` : "";
 
   const customerOptions = (it) => html`<option value="">${it.candidates.length ? "เลือกลูกค้าที่ถูกคน" : "ไม่พบ เลือกลูกค้า"}</option>
