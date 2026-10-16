@@ -1,5 +1,5 @@
 // แจ้งโอนหลายรายจากข้อความ
-import { parseBulkPayout, nameKey } from "../lib/bulk-parse.js";
+import { parseBulkPayout, similarName } from "../lib/bulk-parse.js";
 import { sb } from "../core/config.js";
 import { acctFmt, bankName, errMsg, isOwner, lineName, money, normName, session } from "../core/format.js";
 import { html, part, raw } from "../core/html.js";
@@ -69,27 +69,34 @@ export function bulkPayoutReview(lineId, rows, customers, pending, sourceText, f
   // บัญชีล่าสุดของลูกค้าเป็นค่าเริ่มต้น (ลูกค้าที่เปลี่ยนบัญชี จะใช้บัญชีใหม่)
   for (const c of customers) c.bank_accounts.sort((a, b) => b.created_at.localeCompare(a.created_at));
   const byId = new Map(customers.map((c) => [c.id, c]));
-  const byName = new Map(), byKey = new Map();
-  for (const c of customers) {
-    const n = normName(c.line_name), k = nameKey(c.line_name);
-    if (!byName.has(n)) byName.set(n, []);
-    byName.get(n).push(c);
-    if (k) { if (!byKey.has(k)) byKey.set(k, []); byKey.get(k).push(c); }
-  }
 
+  // จับคู่ชื่อ: ถ้ามีลูกค้าชื่อเหมือนหรือคล้ายกันมากกว่า 1 คน (เช่น Tukta กับ Tuktaริน7)
+  // จะไม่เลือกให้อัตโนมัติ ผู้ใช้ต้องเลือกคนที่ถูกเองก่อนส่ง
   const items = rows.map((r, i) => {
-    const exact = byName.get(normName(r.name)) || [];
-    const loose = exact.length ? exact : (byKey.get(nameKey(r.name)) || []);
-    const one = loose.length === 1 ? loose[0] : null;
+    const similar = customers.filter((c) => similarName(r.name, c.line_name));
+    const exactIds = new Set(similar.filter((c) => normName(c.line_name) === normName(r.name)).map((c) => c.id));
+    similar.sort((a, b) => exactIds.has(b.id) - exactIds.has(a.id));
+    const one = similar.length === 1 ? similar[0] : null;
     return {
       i, raw: r.raw, name: r.name, parseNotes: r.notes, removed: false,
       amount: r.amount ?? "",
-      candidates: loose.length > 1 ? loose.map((c) => c.id) : [],
-      fuzzy: !exact.length && !!one,
+      candidates: similar.length > 1 ? similar.map((c) => c.id) : [],
+      exactIds,
+      fuzzy: !!one && !exactIds.has(one.id),
       customer_id: one?.id || "",
       bank_account_id: one?.bank_accounts[0]?.id || "",
     };
   });
+
+  // ตัวเลือกลูกค้าชื่อคล้ายกัน แสดงบัญชีให้เห็นชัดก่อนเลือก
+  const acctText = (a) => a ? `${bankName(a.bank_code)} ${acctFmt(a.account_number)}${a.account_name ? ` ${a.account_name}` : ""}` : "ยังไม่มีบัญชี";
+  const candidatePicker = (it) => it.candidates.length ? html`<div class="cand-pick" role="radiogroup" aria-label="เลือกลูกค้าที่ถูกคน">
+    <div class="cand-title">มีลูกค้าชื่อเหมือนหรือคล้ายกัน ${it.candidates.length} คน แตะเลือกคนที่ถูกต้อง</div>
+    ${it.candidates.map((id) => { const c = byId.get(id); return html`<label class="cand">
+      <input type="radio" name="cand-${it.i}" value="${id}" data-f="customer_id" ${id === it.customer_id ? raw("checked") : ""}>
+      <span class="cand-body"><span class="cand-name">${c.line_name}${it.exactIds.has(id) ? html` <span class="cand-tag">ชื่อตรงกับข้อความ</span>` : ""}</span>
+        <span class="cand-acct">${acctText(c.bank_accounts[0])}${c.bank_accounts.length > 1 ? ` (+${c.bank_accounts.length - 1} บัญชี)` : ""}</span></span>
+    </label>`; })}</div>` : "";
 
   const customerOptions = (it) => html`<option value="">${it.candidates.length ? "เลือกลูกค้าที่ถูกคน" : "ไม่พบ เลือกลูกค้า"}</option>
     ${(it.candidates.length ? it.candidates.map((id) => byId.get(id)) : customers).map((c) =>
@@ -106,6 +113,7 @@ export function bulkPayoutReview(lineId, rows, customers, pending, sourceText, f
     <div class="bulk-head"><span class="stamp" data-stamp></span><span class="bulk-msg" data-msg></span>
       <button type="button" class="x x-sm" data-remove aria-label="ไม่ส่งรายการนี้">×</button></div>
     <div class="bulk-src">${it.raw}</div>
+    ${candidatePicker(it)}
     <div class="bulk-fields bp-fields">
       <div class="field"><label>ลูกค้า</label><select data-f="customer_id">${customerOptions(it)}</select></div>
       <div class="field"><label>บัญชีที่จะโอน</label><select data-f="bank_account_id">${accountOptions(it)}</select></div>
@@ -123,6 +131,11 @@ export function bulkPayoutReview(lineId, rows, customers, pending, sourceText, f
       const amt = Math.round(Number(it.amount) * 100) / 100;
       it.notes = [...it.parseNotes];
       // รายการที่ส่งไม่ได้ จะถูกตัดออกอัตโนมัติ และแจ้งให้ไปเพิ่มข้อมูลก่อน
+      if (!c && it.candidates.length) {
+        it.kind = "choose";
+        it.msg = `ชื่อคล้ายลูกค้า ${it.candidates.length} คน ต้องเลือกให้ถูกคนก่อนส่ง`;
+        continue;
+      }
       if (!c) {
         it.kind = "skip";
         it.msg = it.candidates.length ? `ชื่อคล้ายลูกค้า ${it.candidates.length} คน เลือกให้ถูกคนถ้าจะส่ง` : "ยังไม่มีลูกค้าชื่อนี้ในระบบ";
@@ -134,6 +147,7 @@ export function bulkPayoutReview(lineId, rows, customers, pending, sourceText, f
       if (!(amt > 0)) { it.kind = "skip"; it.msg = "อ่านยอดเงินไม่ได้ ใส่ยอดถ้าจะส่ง"; it.reason = "อ่านยอดเงินไม่ได้"; continue; }
       it.kind = "ready"; it.msg = `ส่งให้ ${c.line_name}`;
       if (it.fuzzy && it.customer_id && normName(c.line_name) !== normName(it.name)) it.notes.push(`ชื่อในข้อความไม่ตรงทุกตัว จับคู่กับ ${c.line_name} ตรวจว่าถูกคน`);
+      if (it.candidates.length && !it.exactIds.has(c.id)) it.notes.push(`เลือก ${c.line_name} ซึ่งชื่อไม่ตรงกับข้อความ "${it.name}" ตรวจอีกครั้งว่าถูกคน`);
       if (c.bank_accounts.length > 1) it.notes.push(`ลูกค้านี้มี ${c.bank_accounts.length} บัญชี เลือกบัญชีล่าสุดให้ ตรวจอีกครั้ง`);
       if (pending.some((p) => p.customer_id === c.id && Number(p.amount) === amt)) it.notes.push(`มีรายการรอโอน ${money(amt)} บาท ของลูกค้านี้อยู่แล้ว ระวังส่งซ้ำ`);
       if ((perCustomer.get(c.id) || 0) > 1) it.notes.push(`ลูกค้าคนนี้มี ${perCustomer.get(c.id)} รายการในชุดนี้`);
@@ -161,7 +175,9 @@ export function bulkPayoutReview(lineId, rows, customers, pending, sourceText, f
           const el = form.querySelector(`.bulk-item[data-i="${it.i}"]`);
           el.classList.toggle("removed", it.removed);
           const st = el.querySelector("[data-stamp]");
-          const [cls, label] = it.removed ? ["st-cancelled", "ไม่ส่ง"] : it.kind === "ready" ? ["st-confirmed", "พร้อมส่ง"] : ["st-returned", "ยังไม่ส่ง"];
+          const [cls, label] = it.removed ? ["st-cancelled", "ไม่ส่ง"] : it.kind === "ready" ? ["st-confirmed", "พร้อมส่ง"]
+            : it.kind === "choose" ? ["st-pending", "ต้องเลือก"] : ["st-returned", "ยังไม่ส่ง"];
+          el.classList.toggle("must-choose", !it.removed && it.kind === "choose");
           st.className = `stamp ${cls}`; st.textContent = label;
           el.querySelector("[data-msg]").textContent = it.removed ? "กด ↺ เพื่อนำกลับมา" : it.msg;
           el.querySelector("[data-remove]").textContent = it.removed ? "↺" : "×";
@@ -172,14 +188,18 @@ export function bulkPayoutReview(lineId, rows, customers, pending, sourceText, f
         const live = items.filter((x) => !x.removed);
         const ready = live.filter((x) => x.kind === "ready");
         const skipped = live.filter((x) => x.kind === "skip");
+        const choose = live.filter((x) => x.kind === "choose");
         const total = ready.reduce((sum, x) => sum + Math.round(Number(x.amount) * 100) / 100, 0);
         form.querySelector("#bp-sum").innerHTML = html`
           <span class="chip chip-new">พร้อมส่ง ${ready.length}</span>
+          ${choose.length ? html`<span class="chip chip-choose">ต้องเลือกลูกค้า ${choose.length}</span>` : ""}
           ${skipped.length ? html`<span class="chip chip-fix">ยังไม่ส่ง ${skipped.length}</span>` : ""}
           <span class="chip chip-add">รวม ${money(total)} บาท</span>`.s;
         form.querySelector("#bp-skip").innerHTML = skipped.length ? notSentBox(skipped, "ระบบจะตัดรายการเหล่านี้ออก ส่งเฉพาะรายการที่พร้อม").s : "";
-        save.textContent = ready.length ? `ส่ง ${ready.length} รายการ (${money(total)} บาท)` : "ไม่มีรายการที่ส่งได้";
-        save.disabled = !ready.length;
+        // ชื่อคล้ายกันต้องเลือกให้ครบก่อน (หรือกด × ไม่ส่งรายการนั้น) จึงจะส่งได้
+        save.textContent = choose.length ? `เลือกลูกค้าให้ครบก่อน (เหลือ ${choose.length} รายการ)`
+          : ready.length ? `ส่ง ${ready.length} รายการ (${money(total)} บาท)` : "ไม่มีรายการที่ส่งได้";
+        save.disabled = !ready.length || !!choose.length;
       };
       form.addEventListener("change", (e) => {
         const f = e.target.dataset.f;
@@ -189,6 +209,9 @@ export function bulkPayoutReview(lineId, rows, customers, pending, sourceText, f
         it[f] = e.target.value;
         if (f === "customer_id") {
           it.fuzzy = false;
+          // ให้ช่องเลือกและรายการชื่อคล้ายตรงกันเสมอ
+          el.querySelector('select[data-f="customer_id"]').value = it.customer_id;
+          el.querySelectorAll('input[data-f="customer_id"]').forEach((r) => { r.checked = r.value === it.customer_id; });
           it.bank_account_id = byId.get(it.customer_id)?.bank_accounts[0]?.id || "";
           el.querySelector('[data-f="bank_account_id"]').innerHTML = part(accountOptions(it));
         }
