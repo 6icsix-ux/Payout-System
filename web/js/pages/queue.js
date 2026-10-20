@@ -8,6 +8,9 @@ import { state } from "../core/state.js";
 import { gallery, handleGalleryClick, loadBatchImages } from "../core/images.js";
 import { copyText, busy, emptyBox, isModalOpen, meta, openModal, payoutEntry, showError, slip, toast } from "../core/ui.js";
 
+// รีเฟรชคิวอัตโนมัติทุก 1 นาที และหยุดเมื่อไม่ได้ดูหน้าจอ (พับจอ/สลับแท็บ) เพื่อลด log ของ Supabase
+const REFRESH_MS = 60000;
+
 // แตะรายการเพื่อคัดลอกเลขบัญชี (ใช้ทั้งในหน้าคิวและหน้าต่างยืนยันหลายรายการ)
 function copyRow(el) {
   copyText(el.dataset.copyAcct, null).then((ok) => {
@@ -18,7 +21,7 @@ function copyRow(el) {
   });
 }
 
-// รายการที่ติ๊กเลือกไว้ (เก็บไว้ข้ามการรีเฟรชอัตโนมัติทุก 20 วินาที)
+// รายการที่ติ๊กเลือกไว้ (เก็บไว้ข้ามการรีเฟรชอัตโนมัติ)
 const picked = new Set();
 
 // ปุ่มยืนยันใต้รายการแต่ละกลุ่ม: ไม่ติ๊กเลย = ยืนยันทั้งกลุ่ม, ติ๊กไว้ = ยืนยันเฉพาะที่ติ๊ก
@@ -105,7 +108,7 @@ export async function viewQueue(v, _id, alive) {
   v.innerHTML = html`
   <div class="page-head"><h1>คิวโอน</h1>
     <button class="btn btn-sm" data-act="refresh">โหลดใหม่</button>
-    <div class="page-meta"><span>อัปเดตเองทุก 20 วินาที</span><span>แตะกล่องรายละเอียดเพื่อคัดลอกเลขบัญชี</span><span>แตะช่องว่างของแถวหรือช่องติ๊กเพื่อเลือกยืนยันเฉพาะบางรายการ</span></div></div>
+    <div class="page-meta"><span>อัปเดตเองทุก 1 นาที (หยุดเมื่อไม่ได้เปิดดู)</span><span>แตะกล่องรายละเอียดเพื่อคัดลอกเลขบัญชี</span><span>แตะช่องว่างของแถวหรือช่องติ๊กเพื่อเลือกยืนยันเฉพาะบางรายการ</span></div></div>
 
   ${imgs.error ? html`<div class="alert alert-warn">โหลดรูปที่แนบมาไม่สำเร็จ กดโหลดใหม่</div>` : ""}
 
@@ -160,7 +163,13 @@ export async function viewQueue(v, _id, alive) {
     const row = e.target.closest?.("[data-copy-acct]");
     if (row && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); copyRow(row); }
   };
-  state.timer = setInterval(() => { if (!isModalOpen() && alive()) route(); }, 20000);
+  const loadedAt = Date.now();
+  const refresh = () => { if (alive() && !document.hidden && !isModalOpen()) route(); };
+  state.timer = setInterval(refresh, REFRESH_MS);
+  // กลับมาดูหน้าจอหลังหายไปนานกว่า 1 นาที โหลดใหม่ทันที
+  const onVisible = () => { if (!document.hidden && Date.now() - loadedAt >= REFRESH_MS) refresh(); };
+  document.addEventListener("visibilitychange", onVisible);
+  state.cleanup = () => document.removeEventListener("visibilitychange", onVisible);
 }
 
 // ยืนยันการโอนทั้งกลุ่ม: แสดงสรุปทุกรายการ ติ๊กว่าโอนครบแล้ว แล้วยืนยันทีละรายการ
