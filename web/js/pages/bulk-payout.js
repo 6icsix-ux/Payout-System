@@ -1,7 +1,7 @@
 // แจ้งโอนหลายรายจากข้อความ
 import { parseBulkPayout, similarName } from "../lib/bulk-parse.js";
 import { sb } from "../core/config.js";
-import { acctFmt, bankName, errMsg, isOwner, lineName, money, normName, session } from "../core/format.js";
+import { acctFmt, bankName, errMsg, isOwner, lineName, money, normName, rank, session } from "../core/format.js";
 import { html, part, raw } from "../core/html.js";
 import { ICON, svg } from "../core/icons.js";
 import { parseRoute } from "../core/router.js";
@@ -268,7 +268,8 @@ export function bulkPayoutReview(lineId, rows, customers, pending, sourceText, f
                 ${done.failed.length ? html`<span class="chip chip-fix">ไม่สำเร็จ ${done.failed.length}</span>` : ""}</div>
               ${done.imageFailed.length ? html`<div class="alert alert-warn"><b>ส่งรูปไม่สำเร็จ ${done.imageFailed.length} รูป</b> รายการส่งไปแล้ว แต่แอดมินจะไม่เห็นรูปเหล่านี้
                 <ul class="bulk-result">${done.imageFailed.map((x) => html`<li>${x}</li>`)}</ul></div>` : ""}
-              ${notSent.length ? notSentBox(notSent, "ยังไม่ได้ดำเนินการส่ง เพิ่มลูกค้าหรือบัญชีก่อน แล้ววางรายการเหล่านี้ส่งใหม่") : ""}
+              ${notSent.length ? notSentBox(notSent, rank() >= 3 ? "ยังไม่ได้ดำเนินการส่ง เพิ่มลูกค้าหรือบัญชีก่อน แล้ววางรายการเหล่านี้ส่งใหม่"
+                : "ยังไม่ได้ดำเนินการส่ง แจ้งผู้ดูแลให้เพิ่มลูกค้า หรือเพิ่มบัญชีให้ลูกค้าเดิม แล้ววางรายการเหล่านี้ส่งใหม่") : ""}
               ${done.failed.length ? html`<div class="alert alert-danger"><b>ส่งไม่สำเร็จ</b>
                 <ul class="bulk-result">${done.failed.map((x) => html`<li><b>${x.name}</b> ${x.msg}</li>`)}</ul></div>` : ""}`,
             foot: html`<button type="button" class="btn btn-primary" data-close>เสร็จแล้ว</button>`,

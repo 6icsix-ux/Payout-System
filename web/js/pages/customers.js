@@ -21,11 +21,15 @@ async function searchPage(text, lineId, limit, offset) {
   return { data: old.data.slice(offset, offset + limit), total: old.data.length, error: null };
 }
 
+// เพิ่มลูกค้าใหม่ได้เฉพาะผู้ดูแลและเจ้าของเว็บ
+export const canAddCustomer = () => rank() >= 3;
+
 export async function viewCustomers(v, _id, alive) {
+  const canAdd = canAddCustomer();
   v.innerHTML = html`
   <div class="page-head"><h1>ลูกค้า <span class="h-count" id="c-count" hidden></span></h1>
-    <button class="btn" id="bulk">${svg(ICON.paste, 18)}วางหลายราย</button>
-    <button class="btn btn-primary" id="add">${svg(ICON.plus, 18)}เพิ่มลูกค้า</button></div>
+    ${canAdd ? html`<button class="btn" id="bulk">${svg(ICON.paste, 18)}วางหลายราย</button>
+    <button class="btn btn-primary" id="add">${svg(ICON.plus, 18)}เพิ่มลูกค้า</button>` : ""}</div>
   <div class="search-row">
     <label class="search">${svg(ICON.search)}
       <input type="search" id="q" placeholder="ค้นหาด้วยชื่อไลน์ ชื่อบัญชี หรือเลขบัญชี" autocomplete="off" aria-label="ค้นหาลูกค้า"></label>
@@ -102,8 +106,8 @@ export async function viewCustomers(v, _id, alive) {
             <span class="num">${acctFmt(a.account_number)}</span>
             <span class="holder">${holderName(a.account_name)}</span></div>`) : html`<div class="meta">ยังไม่มีบัญชี</div>`}</div>
       </a>`)}</div>`.s
-      : (q.value ? emptyBox("ไม่พบลูกค้าที่ตรงกับคำค้น", "ลองค้นด้วยเลขบัญชีบางส่วน หรือกดเพิ่มลูกค้า")
-        : emptyBox("ยังไม่มีลูกค้าในสาย", "กดเพิ่มลูกค้าเพื่อบันทึกบัญชีแรก")).s;
+      : (q.value ? emptyBox("ไม่พบลูกค้าที่ตรงกับคำค้น", canAdd ? "ลองค้นด้วยเลขบัญชีบางส่วน หรือกดเพิ่มลูกค้า" : "ลองค้นด้วยเลขบัญชีบางส่วน ถ้ายังไม่มี แจ้งผู้ดูแลให้เพิ่มลูกค้า")
+        : emptyBox("ยังไม่มีลูกค้าในสาย", canAdd ? "กดเพิ่มลูกค้าเพื่อบันทึกบัญชีแรก" : "แจ้งผู้ดูแลให้เพิ่มลูกค้า")).s;
   };
   q.oninput = () => { clearTimeout(t); t = setTimeout(() => { page = 0; run(); }, 250); };
   sizeSel.onchange = () => { size = Number(sizeSel.value); storage("pageSize", String(size)); page = 0; run(); };
@@ -125,8 +129,10 @@ export async function viewCustomers(v, _id, alive) {
     loadCount();
   };
   q.focus();
-  v.querySelector("#add").onclick = () => addCustomerModal(q.value);
-  v.querySelector("#bulk").onclick = () => bulkPasteModal();
+  if (canAdd) {
+    v.querySelector("#add").onclick = () => addCustomerModal(q.value);
+    v.querySelector("#bulk").onclick = () => bulkPasteModal();
+  }
   await Promise.all([run(), loadCount()]);
 }
 
