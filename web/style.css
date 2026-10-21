@@ -485,6 +485,31 @@ tr.off td { color: var(--ink-3); }
 .bulk-src { font-size: 13px; color: var(--ink-3); background: var(--sunk); border-radius: 8px; padding: 4px 10px; margin-bottom: 10px; overflow-wrap: anywhere; }
 .bp-fields { grid-template-columns: 1.2fr 1.6fr .8fr; }
 .bulk-notes div + div { margin-top: 2px; }
+/* ลบลูกค้า */
+/* เมนูแก้ไขลูกค้า */
+.menu-wrap { position: relative; }
+.edit-btn { width: 38px; height: 38px; padding: 0; justify-content: center; flex: none; }
+.edit-btn svg { width: 18px; height: 18px; flex: none; }
+.edit-btn[aria-expanded="true"] { border-color: var(--blue); color: var(--blue); background: var(--blue-soft); }
+.menu { position: absolute; top: calc(100% + 6px); right: 0; z-index: 30; min-width: 180px; padding: 6px; background: var(--surface);
+  border: 1px solid var(--rule-2); border-radius: 12px; box-shadow: 0 12px 32px rgba(15, 23, 42, .16); }
+.menu[hidden] { display: none; }
+.menu button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border: 0; border-radius: 8px;
+  background: none; font: inherit; font-size: 14.5px; color: var(--ink); text-align: left; cursor: pointer; }
+.menu button:hover, .menu button:focus-visible { background: var(--sunk); outline: none; }
+.menu button.danger { color: var(--red); }
+.menu button.danger:hover, .menu button.danger:focus-visible { background: var(--red-soft); }
+.del-who { padding: 12px 14px; border-radius: 12px; background: var(--red-soft); margin-bottom: 10px; }
+.del-who .k { font-size: 13px; color: var(--red); }
+.del-who .v { font-size: 19px; font-weight: 700; color: var(--ink); overflow-wrap: anywhere; }
+.del-accts { display: grid; gap: 6px; margin-bottom: 10px; }
+.del-acct { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 14px; }
+.del-acct .num { font-weight: 600; }
+.del-acct .holder { color: var(--ink-2); }
+.del-list { margin: 0 0 12px; padding-left: 20px; font-size: 14.5px; color: var(--ink-2); }
+.check-line.del-check:has(input:checked) { border-color: var(--red); background: var(--red-soft); }
+.modal [data-act=do-delete]:not(:disabled) { background: var(--red); border-color: var(--red); color: #fff; }
+.del-check input { accent-color: var(--red); }
 /* ชื่อลูกค้าคล้ายกัน: ต้องเลือกคนที่ถูกก่อนส่ง */
 .bulk-item.must-choose { border: 2px solid var(--gold); background: #fffdf6; }
 .chip-choose { background: var(--gold-soft); color: #7a5713; }
