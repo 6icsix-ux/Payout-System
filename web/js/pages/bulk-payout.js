@@ -69,23 +69,48 @@ export function bulkPayoutReview(lineId, rows, customers, pending, sourceText, f
   // บัญชีล่าสุดของลูกค้าเป็นค่าเริ่มต้น (ลูกค้าที่เปลี่ยนบัญชี จะใช้บัญชีใหม่)
   for (const c of customers) c.bank_accounts.sort((a, b) => b.created_at.localeCompare(a.created_at));
   const byId = new Map(customers.map((c) => [c.id, c]));
+  // ยอดตามการอ่านที่ตรงกับลูกค้าที่เลือก (ใช้เมื่อข้อความอ่านได้ 2 แบบ)
+  const amountFor = (it, cid) => {
+    const c = byId.get(cid);
+    return c && normName(c.line_name) === it.interp.altName ? it.interp.altAmount : it.interp.mainAmount;
+  };
 
   // จับคู่ชื่อ: ถ้ามีลูกค้าชื่อเหมือนหรือคล้ายกันมากกว่า 1 คน (เช่น Tukta กับ Tuktaริน7)
   // จะไม่เลือกให้อัตโนมัติ ผู้ใช้ต้องเลือกคนที่ถูกเองก่อนส่ง
+  const exactOf = (n) => customers.filter((c) => normName(c.line_name) === normName(n));
   const items = rows.map((r, i) => {
-    const similar = customers.filter((c) => similarName(r.name, c.line_name));
-    const exactIds = new Set(similar.filter((c) => normName(c.line_name) === normName(r.name)).map((c) => c.id));
+    let name = r.name, amount = r.amount, interp = null, mustChoose = false;
+    const parseNotes = [...r.notes];
+    // ข้อความอ่านได้ 2 แบบ เช่น "kim 555 +6000" = ชื่อ kim ยอด 6555 หรือ ชื่อ kim 555 ยอด 6000
+    // ใช้รายชื่อลูกค้าจริงตัดสิน ถ้ายังไม่ชัดให้ผู้ใช้เลือก และยอดเปลี่ยนตามคนที่เลือก
+    if (r.alt) {
+      const altEx = exactOf(r.alt.name), mainEx = exactOf(r.name);
+      if (altEx.length && !mainEx.length) {
+        name = r.alt.name; amount = r.alt.amount;
+        parseNotes.push(`อ่านเป็นชื่อ "${r.alt.name}" ยอด ${money(r.alt.amount)} เพราะมีลูกค้าชื่อนี้ (ไม่ใช่ "${r.name}" ยอด ${money(r.amount)})`);
+      } else if (altEx.length || !mainEx.length) {
+        // มีลูกค้าตรงทั้ง 2 ชื่อ หรือไม่ตรงทั้งคู่: ให้ผู้ใช้ตรวจ (ถ้าตรงเฉพาะชื่อแบบแรก ใช้แบบแรกตามเดิม)
+        interp = { altName: normName(r.alt.name), altAmount: r.alt.amount, mainAmount: r.amount };
+        mustChoose = altEx.length > 0 && mainEx.length > 0;
+        parseNotes.push(`ข้อความอ่านได้ 2 แบบ: "${r.name}" ยอด ${money(r.amount)} หรือ "${r.alt.name}" ยอด ${money(r.alt.amount)} ตรวจให้ถูกก่อนส่ง`);
+      }
+    }
+    const names = interp ? [name, r.alt.name] : [name];
+    const similar = customers.filter((c) => names.some((n) => similarName(n, c.line_name)));
+    const exactIds = new Set(similar.filter((c) => names.some((n) => normName(c.line_name) === normName(n))).map((c) => c.id));
     similar.sort((a, b) => exactIds.has(b.id) - exactIds.has(a.id));
-    const one = similar.length === 1 ? similar[0] : null;
-    return {
-      i, raw: r.raw, name: r.name, parseNotes: r.notes, removed: false,
-      amount: r.amount ?? "",
+    const one = similar.length === 1 && !mustChoose ? similar[0] : null;
+    const it = {
+      i, raw: r.raw, name, parseNotes, removed: false, interp,
+      amount: amount ?? "",
       candidates: similar.length > 1 ? similar.map((c) => c.id) : [],
       exactIds,
       fuzzy: !!one && !exactIds.has(one.id),
       customer_id: one?.id || "",
       bank_account_id: one?.bank_accounts[0]?.id || "",
     };
+    if (one && interp) it.amount = amountFor(it, one.id);
+    return it;
   });
 
   // ตัวเลือกลูกค้าชื่อคล้ายกัน แสดงบัญชีให้เห็นชัดก่อนเลือก
@@ -220,13 +245,20 @@ export function bulkPayoutReview(lineId, rows, customers, pending, sourceText, f
           el.querySelector('select[data-f="customer_id"]').value = it.customer_id;
           el.querySelectorAll('input[data-f="customer_id"]').forEach((r) => { r.checked = r.value === it.customer_id; });
           it.bank_account_id = byId.get(it.customer_id)?.bank_accounts[0]?.id || "";
+          // อ่านได้ 2 แบบ: ยอดตามคนที่เลือก (ถ้ายังไม่ได้แก้ยอดเอง)
+          if (it.interp && it.customer_id && !it.amountEdited) {
+            it.amount = amountFor(it, it.customer_id);
+            el.querySelector('[data-f="amount"]').value = it.amount;
+          }
           el.querySelector('[data-f="bank_account_id"]').innerHTML = part(accountOptions(it));
         }
         refresh();
       });
       form.addEventListener("input", (e) => {
         if (e.target.dataset.f !== "amount") return;
-        items[Number(e.target.closest(".bulk-item").dataset.i)].amount = e.target.value;
+        const it = items[Number(e.target.closest(".bulk-item").dataset.i)];
+        it.amount = e.target.value;
+        it.amountEdited = true;
         refresh();
       });
       form.addEventListener("click", (e) => {

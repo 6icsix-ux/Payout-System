@@ -205,7 +205,9 @@ function takeExpr(text) {
 }
 
 function normalizeLine(raw) {
-  let s = String(raw).normalize("NFKC").replace(/[๐-๙]/g, (d) => THAI_DIGITS.indexOf(d));
+  let s = String(raw).normalize("NFKC").replace(/[๐-๙]/g, (d) => THAI_DIGITS.indexOf(d))
+    .replace(/[\u200b-\u200d\u2060\ufeff]/g, "")     // ตัวอักษรล่องหนที่ติดมาจากแชท
+    .replace(/[➕✚]/g, "+");
   // ก๊อปจากแชทไลน์: "21:05<tab>ชื่อคนส่ง<tab>ข้อความ"
   const chat = s.match(/^\s*\d{1,2}[:.]\d{2}\t[^\t]*\t(.*)$/);
   if (chat) s = chat[1];
@@ -233,9 +235,17 @@ export function parsePayoutLine(raw) {
   } else {
     // ไม่มี (+): ตัวเลขชุดท้ายบรรทัดคือยอด ต้องเว้นวรรคหรือมีเครื่องหมายคั่นจากชื่อ
     const tail = line.replace(UNITS, " ").replace(/\.-/g, "").replace(/[^\d)]*$/, "").replace(/\(\D*\)$/, "").trim();
-    const m = tail.match(/^(.*?)(?:\s*[:=+]+\s*|\s+)(-?\d[\d,.]*(?:\s*[+\-*x×=]\s*\**\d[\d,.]*\**)*)$/);
+    const m = tail.match(/^(.*?)(\s*[:=+]+\s*|\s+)(-?\d[\d,.]*(?:\s*[+\-*x×=]\s*\**\d[\d,.]*\**)*)$/);
     if (!m) { out.name = cleanName(line); out.notes.push("ไม่พบยอดเงิน"); return out; }
-    namePart = m[1]; amtPart = m[2];
+    namePart = m[1]; amtPart = m[3];
+    // อ่านได้ 2 แบบ: "kim 555 +6000" อาจเป็นชื่อ "kim" ยอด 555+6000 หรือชื่อ "kim 555" ยอด 6000
+    // เก็บแบบที่ 2 ไว้ให้หน้าจับคู่ลูกค้าเลือกจากรายชื่อลูกค้าจริง
+    const split = /^\s+$/.test(m[2]) && !amtPart.includes("=") && amtPart.match(/^(\d[\d,.]*)\s*\+\s*(.+)$/);
+    if (split) {
+      const restExpr = takeExpr(split[2]);
+      const restAmt = restExpr ? evalExpr(restExpr) : null;
+      if (restAmt > 0) out.alt = { name: cleanName(`${namePart} ${split[1]}`), amount: Math.round(restAmt * 100) / 100 };
+    }
   }
   out.name = cleanName(namePart);
 
