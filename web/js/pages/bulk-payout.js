@@ -61,7 +61,7 @@ export function notSentBox(list, title) {
     <div class="not-sent-head"><b>${title}</b>
       <button type="button" class="copy-btn" data-copy="${lines}">${svg(ICON.copy, 16)}คัดลอกรายการ</button></div>
     <ul class="bulk-result">${list.map((x) => html`<li><b>${x.name || "(ไม่มีชื่อ)"}</b>
-      ${Number(x.amount) > 0 ? `${money(x.amount)} บาท` : "(ไม่มียอด)"} <span class="why">${x.reason}</span></li>`)}</ul>
+      ${Number(x.amount) > 0 ? `${money(x.amount)} บาท` : x.negative != null ? "" : "(ไม่มียอด)"} <span class="why">${x.reason}</span></li>`)}</ul>
   </div>`;
 }
 
@@ -101,7 +101,7 @@ export function bulkPayoutReview(lineId, rows, customers, pending, sourceText, f
     similar.sort((a, b) => exactIds.has(b.id) - exactIds.has(a.id));
     const one = similar.length === 1 && !mustChoose ? similar[0] : null;
     const it = {
-      i, raw: r.raw, name, parseNotes, removed: false, interp,
+      i, raw: r.raw, name, parseNotes, removed: false, interp, negative: r.negative,
       amount: amount ?? "",
       candidates: similar.length > 1 ? similar.map((c) => c.id) : [],
       exactIds,
@@ -163,6 +163,13 @@ export function bulkPayoutReview(lineId, rows, customers, pending, sourceText, f
       const amt = Math.round(Number(it.amount) * 100) / 100;
       it.notes = [...it.parseNotes];
       // รายการที่ส่งไม่ได้ จะถูกตัดออกอัตโนมัติ และแจ้งให้ไปเพิ่มข้อมูลก่อน
+      // ยอดติดลบจากข้อความ: ไม่ส่ง (ถ้าผู้ใช้ใส่ยอดบวกเองถึงจะส่งได้)
+      if (it.negative != null && !(amt > 0)) {
+        it.kind = "skip";
+        it.msg = `ยอดติดลบ ${money(it.negative)} บาท ไม่ต้องโอน`;
+        it.reason = `ยอดติดลบ ${money(it.negative)} บาท`;
+        continue;
+      }
       if (!c && it.candidates.length) {
         it.kind = "choose";
         it.msg = `ชื่อคล้ายลูกค้า ${it.candidates.length} คน ต้องเลือกให้ถูกคนก่อนส่ง`;

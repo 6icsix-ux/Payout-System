@@ -207,7 +207,8 @@ function takeExpr(text) {
 function normalizeLine(raw) {
   let s = String(raw).normalize("NFKC").replace(/[๐-๙]/g, (d) => THAI_DIGITS.indexOf(d))
     .replace(/[\u200b-\u200d\u2060\ufeff]/g, "")     // ตัวอักษรล่องหนที่ติดมาจากแชท
-    .replace(/[➕✚]/g, "+");
+    .replace(/[➕✚]/g, "+")
+    .replace(/[−–]/g, "-");                            // เครื่องหมายลบแบบอื่น
   // ก๊อปจากแชทไลน์: "21:05<tab>ชื่อคนส่ง<tab>ข้อความ"
   const chat = s.match(/^\s*\d{1,2}[:.]\d{2}\t[^\t]*\t(.*)$/);
   if (chat) s = chat[1];
@@ -235,7 +236,7 @@ export function parsePayoutLine(raw) {
   } else {
     // ไม่มี (+): ตัวเลขชุดท้ายบรรทัดคือยอด ต้องเว้นวรรคหรือมีเครื่องหมายคั่นจากชื่อ
     const tail = line.replace(UNITS, " ").replace(/\.-/g, "").replace(/[^\d)]*$/, "").replace(/\(\D*\)$/, "").trim();
-    const m = tail.match(/^(.*?)(\s*[:=+]+\s*|\s+)(-?\d[\d,.]*(?:\s*[+\-*x×=]\s*\**\d[\d,.]*\**)*)$/);
+    const m = tail.match(/^(.*?)(\s*[:=+]+\s*|\s+)(-?\d[\d,.]*(?:\s*[+\-*x×=]\s*\**-?\d[\d,.]*\**)*)$/);
     if (!m) { out.name = cleanName(line); out.notes.push("ไม่พบยอดเงิน"); return out; }
     namePart = m[1]; amtPart = m[3];
     // อ่านได้ 2 แบบ: "kim 555 +6000" อาจเป็นชื่อ "kim" ยอด 555+6000 หรือชื่อ "kim 555" ยอด 6000
@@ -250,7 +251,12 @@ export function parsePayoutLine(raw) {
   out.name = cleanName(namePart);
 
   let a = amtPart.replace(/\(\s*\+\s*\)/g, "+").replace(UNITS, " ").replace(/\.-/g, "");
-  if (/^\s*-\s*\d/.test(a)) { out.notes.push("ยอดติดลบ"); return out; }
+  if (/^\s*-\s*\d/.test(a)) {
+    const v = takeExpr(a);
+    out.negative = v ? -Math.abs(Number(v.replace(/[\s,]/g, "").split(/[+*x×X=]/)[0].replace(/^-/, ""))) : null;
+    out.notes.push(out.negative ? `ยอดติดลบ ${out.negative.toLocaleString("en-US", { minimumFractionDigits: 2 })} บาท ไม่ต้องโอน ตรวจกับลูกค้าก่อน` : "ยอดติดลบ");
+    return out;
+  }
 
   const eq = a.lastIndexOf("=");
   let calc = null, stated = null;
@@ -259,8 +265,10 @@ export function parsePayoutLine(raw) {
     calc = left ? evalExpr(left) : null;
     const right = takeExpr(a.slice(eq + 1));
     stated = right && /^[\d,.\s]+$/.test(right) ? Number(right.replace(/[\s,]/g, "")) : null;
+    // ยอดหลัง = ติดลบ เช่น "= *-700*"
+    if (stated != null && /^[\s*]*-\s*\**\s*\d/.test(a.slice(eq + 1))) stated = -stated;
     if (stated == null && a.slice(eq + 1).trim()) out.notes.push("อ่านยอดหลัง = ไม่ได้ ใช้ยอดที่คำนวณแทน");
-    if (stated != null && calc != null && Math.abs(stated - calc) > 0.001) {
+    if (stated != null && calc != null && Math.abs(stated - calc) > 0.001 && stated > 0 && calc > 0) {
       out.notes.push(`ยอดที่เขียนไว้ ${stated} ไม่ตรงกับที่คำนวณได้ ${calc}`);
     }
   } else {
@@ -268,6 +276,13 @@ export function parsePayoutLine(raw) {
     calc = expr ? evalExpr(expr) : null;
   }
   if (/(^|[^\d,.])\d{1,3}\.\d{3}(?![\d,.])/.test(a)) out.notes.push("ตัวเลขมีจุดตามด้วย 3 หลัก ถ้าตั้งใจเป็นหลักพัน แก้ยอดก่อนส่ง");
+  // ยอดติดลบ (ลูกค้าเสีย / ไม่ต้องโอน): ไม่ส่ง และแจ้งผู้ใช้ ไม่ตัดเครื่องหมายลบทิ้ง
+  const neg = [stated, calc].find((v) => v != null && v <= 0);
+  if (neg != null) {
+    out.negative = Math.round(neg * 100) / 100;
+    out.notes.push(`ยอดติดลบ ${out.negative.toLocaleString("en-US", { minimumFractionDigits: 2 })} บาท ไม่ต้องโอน ตรวจกับลูกค้าก่อน`);
+    return out;
+  }
   const amount = stated ?? calc;
   if (amount == null || !(amount > 0)) out.notes.push("อ่านยอดเงินไม่ได้");
   else out.amount = Math.round(amount * 100) / 100;
