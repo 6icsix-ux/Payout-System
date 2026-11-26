@@ -65,7 +65,35 @@ export function notSentBox(list, title) {
   </div>`;
 }
 
-export function bulkPayoutReview(lineId, rows, customers, pending, sourceText, files = []) {
+// รวมรายการที่ชื่อซ้ำกันทุกตัว (ไม่นับชื่อคล้าย) เป็นรายการเดียว ยอดรวมกัน และจดว่ามาจากบรรทัดไหนบ้าง
+// รวมเฉพาะบรรทัดที่อ่านยอดได้ปกติ บรรทัดยอดติดลบ อ่านยอดไม่ได้ หรืออ่านได้ 2 แบบ แยกไว้ให้ตรวจเอง
+export function mergeSameName(rows) {
+  const out = [], byName = new Map();
+  for (const r of rows) {
+    const ok = r.name && r.amount > 0 && !r.alt && r.negative == null;
+    const k = normName(r.name);
+    const g = ok && byName.get(k);
+    if (g) {
+      g.parts.push(r);
+      g.amount = Math.round((g.amount + r.amount) * 100) / 100;
+      g.raw += "\n" + r.raw;
+      g.notes.push(...r.notes);
+      continue;
+    }
+    const item = { ...r, notes: [...r.notes], parts: [r] };
+    if (ok) byName.set(k, item);
+    out.push(item);
+  }
+  for (const g of out) if (g.parts.length > 1) {
+    g.notes.unshift(`รวม ${g.parts.length} รายการชื่อซ้ำ: ${g.parts.map((x) => money(x.amount)).join(" + ")} = ${money(g.amount)} บาท`);
+    g.merged = g.parts.length;
+  }
+  return out;
+}
+
+export function bulkPayoutReview(lineId, rowsIn, customers, pending, sourceText, files = []) {
+  const rows = mergeSameName(rowsIn);
+  const mergedCount = rows.filter((r) => r.merged).length;
   // บัญชีล่าสุดของลูกค้าเป็นค่าเริ่มต้น (ลูกค้าที่เปลี่ยนบัญชี จะใช้บัญชีใหม่)
   for (const c of customers) c.bank_accounts.sort((a, b) => b.created_at.localeCompare(a.created_at));
   const byId = new Map(customers.map((c) => [c.id, c]));
@@ -101,7 +129,7 @@ export function bulkPayoutReview(lineId, rows, customers, pending, sourceText, f
     similar.sort((a, b) => exactIds.has(b.id) - exactIds.has(a.id));
     const one = similar.length === 1 && !mustChoose ? similar[0] : null;
     const it = {
-      i, raw: r.raw, name, parseNotes, removed: false, interp, negative: r.negative,
+      i, raw: r.raw, name, parseNotes, removed: false, interp, negative: r.negative, merged: r.merged || 0,
       amount: amount ?? "",
       candidates: similar.length > 1 ? similar.map((c) => c.id) : [],
       exactIds,
@@ -144,7 +172,7 @@ export function bulkPayoutReview(lineId, rows, customers, pending, sourceText, f
   const card = (it) => html`<div class="bulk-item" data-i="${it.i}">
     <div class="bulk-head"><span class="stamp" data-stamp></span><span class="bulk-msg" data-msg></span>
       <button type="button" class="x x-sm" data-remove aria-label="ไม่ส่งรายการนี้">×</button></div>
-    <div class="bulk-src">${it.raw}</div>
+    <div class="bulk-src${it.merged ? " merged" : ""}">${it.merged ? html`<span class="merge-tag">รวม ${it.merged} รายการ</span>` : ""}${it.raw}</div>
     ${candidatePicker(it)}
     <div class="bulk-fields bp-fields">
       <div class="field"><label>ลูกค้า</label><select data-f="customer_id">${customerOptions(it)}</select></div>
@@ -157,7 +185,8 @@ export function bulkPayoutReview(lineId, rows, customers, pending, sourceText, f
   const evaluate = () => {
     const live = items.filter((x) => !x.removed);
     const perCustomer = new Map();
-    for (const it of live) if (it.customer_id) perCustomer.set(it.customer_id, (perCustomer.get(it.customer_id) || 0) + 1);
+    // นับเฉพาะรายการที่จะส่งจริง (ไม่นับบรรทัดยอดติดลบที่ไม่ได้ใส่ยอดเอง)
+    for (const it of live) if (it.customer_id && !(it.negative != null && !(Number(it.amount) > 0))) perCustomer.set(it.customer_id, (perCustomer.get(it.customer_id) || 0) + 1);
     for (const it of items) {
       const c = byId.get(it.customer_id);
       const amt = Math.round(Number(it.amount) * 100) / 100;
@@ -232,6 +261,7 @@ export function bulkPayoutReview(lineId, rows, customers, pending, sourceText, f
         form.querySelector("#bp-sum").innerHTML = html`
           <span class="chip chip-new">พร้อมส่ง ${ready.length}</span>
           ${choose.length ? html`<span class="chip chip-choose">ต้องเลือกลูกค้า ${choose.length}</span>` : ""}
+          ${mergedCount ? html`<span class="chip chip-merge">รวมชื่อซ้ำ ${mergedCount} คน</span>` : ""}
           ${skipped.length ? html`<span class="chip chip-fix">ยังไม่ส่ง ${skipped.length}</span>` : ""}
           <span class="chip chip-add">รวม ${money(total)} บาท</span>`.s;
         form.querySelector("#bp-skip").innerHTML = skipped.length ? notSentBox(skipped, "ระบบจะตัดรายการเหล่านี้ออก ส่งเฉพาะรายการที่พร้อม").s : "";
